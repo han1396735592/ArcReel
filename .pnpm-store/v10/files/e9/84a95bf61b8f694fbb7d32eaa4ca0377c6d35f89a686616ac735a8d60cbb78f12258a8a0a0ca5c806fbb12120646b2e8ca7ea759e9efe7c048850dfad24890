@@ -1,0 +1,1160 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="4d81384c-7b21-5a86-8009-156ce6e4d5c8")}catch(e){}}();
+import { kt as GITHUB_ACTIONS_SETUP_URL, o as CI_TRUST_COMPANIES, pn as SKILL_NAME, u as METRIC } from "./constants-_b1h6lxa.js";
+import { Mt as highlighter, Un as isErrnoException, t as recordCount, y as CliInputError } from "./record-metric-AbxY4m3i.js";
+import { C as isRecord, D as readPackageJson, E as packageHasRecordKey, M as writeJsonFile, N as cliLogger, O as resolveGitPath, S as getPackageJsonPath, T as packageHasNestedRecordKey, _ as REACT_DOCTOR_COMMAND, a as installReactDoctorScriptStep, b as VITE_PLUS_HOOKS_PATH, c as spinner, d as HUSKY_HOOKS_PATH, f as LEFTHOOK_CONFIG_FILES, g as PRE_COMMIT_CONFIG_FILE, h as OVERCOMMIT_CONFIG_FILE, k as runGit, l as HOOK_FILE_NAME, m as NON_BLOCKING_REACT_DOCTOR_COMMAND, n as findNearestPackageDirectory, p as LEGACY_HOOK_RUNNER_RELATIVE_PATH, r as hasDoctorDependency, t as DOCTOR_PACKAGE_NAME, u as HOOK_RELATIVE_PATH, w as packageHasDependency, x as ensureTrailingNewline } from "./install-doctor-script-BvrxLUFo.js";
+import { a as readReactDoctorWorkflow, c as workflowUsesV1Action, d as detectDefaultBranch, l as prompts, n as getReactDoctorWorkflowPath, o as upgradeReactDoctorWorkflowInPlace, r as installReactDoctorWorkflow } from "./install-github-workflow-BABtyGBR.js";
+import { t as shouldSkipPrompts } from "./should-skip-prompts-DrbDyg_I.js";
+import { a as recordGate, c as ACTION_UPGRADE_EVENT, d as INSTALL_AGENTS_PREFERENCE_ID, g as loadAgentInstall, h as detectAvailableAgents, i as readPreference, l as CI_PITCH_EVENT, m as computeDefaultSelectedAgents, n as openUrl, r as isGatePending, s as writePreference, t as reportWorkflowResult } from "./report-workflow-result-DQ2CaExl.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+//#region src/cli/utils/action-upgrade-prompt.ts
+const ACTION_UPGRADE_GATE = {
+	id: ACTION_UPGRADE_EVENT,
+	scope: "project"
+};
+const hasHandledActionUpgrade = (projectRoot, options = {}) => !isGatePending(ACTION_UPGRADE_GATE, { projectRoot }, options);
+const recordActionUpgradeDecision = (projectRoot, outcome, options = {}) => recordGate(ACTION_UPGRADE_GATE, {
+	projectRoot,
+	outcome
+}, options);
+//#endregion
+//#region src/cli/utils/ci-prompt-decision.ts
+const CI_PITCH_GATE = {
+	id: CI_PITCH_EVENT,
+	scope: "project"
+};
+const hasHandledCiPrompt = (projectRoot, options = {}) => !isGatePending(CI_PITCH_GATE, { projectRoot }, options);
+const recordCiPromptDecision = (projectRoot, outcome, options = {}) => recordGate(CI_PITCH_GATE, {
+	projectRoot,
+	outcome
+}, options);
+//#endregion
+//#region src/cli/utils/ask-add-to-github-actions.ts
+const CI_YES_CHOICE = "ci-yes";
+const CI_LEARN_MORE_CHOICE = "ci-learn-more";
+const CI_NO_CHOICE = "ci-no";
+const SGR_BOLD_OFF = "\x1B[22m";
+const ciQuestionMessage = [
+	"Add React Doctor to GitHub Actions?",
+	`${SGR_BOLD_OFF}  ${highlighter.dim("Scan every pull request to prevent new React issues while you fix the backlog.")}`,
+	`${SGR_BOLD_OFF}  ${highlighter.dim(`Used by teams at ${CI_TRUST_COMPANIES}.`)}`
+].join("\n");
+const askAddToGitHubActions = async (prompt = prompts) => {
+	while (true) {
+		const { ciChoice } = await prompt({
+			type: "select",
+			name: "ciChoice",
+			message: ciQuestionMessage,
+			hint: " ",
+			choices: [
+				{
+					title: "Yes",
+					description: "Adds the workflow file and a doctor package script",
+					value: CI_YES_CHOICE
+				},
+				{
+					title: "Learn more",
+					description: "Opens the docs page in your browser",
+					value: CI_LEARN_MORE_CHOICE
+				},
+				{
+					title: "No",
+					description: "Skip for now",
+					value: CI_NO_CHOICE
+				}
+			],
+			initial: 0
+		}, { onCancel: () => true });
+		if (ciChoice === void 0) return "cancel";
+		if (ciChoice === CI_YES_CHOICE) return "yes";
+		if (ciChoice === CI_NO_CHOICE) return "no";
+		const opened = await openUrl(GITHUB_ACTIONS_SETUP_URL);
+		cliLogger.log(opened ? `Opened ${highlighter.info(GITHUB_ACTIONS_SETUP_URL)} in your browser.` : `Visit ${highlighter.info(GITHUB_ACTIONS_SETUP_URL)} to learn more.`);
+		cliLogger.break();
+	}
+};
+//#endregion
+//#region src/cli/utils/ask-upgrade-action-version.ts
+const UPGRADE_YES_CHOICE = "upgrade-yes";
+const UPGRADE_NO_CHOICE = "upgrade-no";
+const askUpgradeActionVersion = async (prompt = prompts) => {
+	const { upgradeChoice } = await prompt({
+		type: "select",
+		name: "upgradeChoice",
+		message: "A new major of the React Doctor Action (v2) is out. Upgrade this repo's workflow?",
+		hint: " ",
+		choices: [{
+			title: "Yes (recommended)",
+			description: "Bump the workflow to millionco/react-doctor@v2",
+			value: UPGRADE_YES_CHOICE
+		}, {
+			title: "No, thanks",
+			description: "Keep @v1 — won't ask again for this repo",
+			value: UPGRADE_NO_CHOICE
+		}],
+		initial: 0
+	}, { onCancel: () => true });
+	if (upgradeChoice === void 0) return "cancel";
+	return upgradeChoice === UPGRADE_YES_CHOICE ? "yes" : "no";
+};
+//#endregion
+//#region src/cli/utils/install-agents-preference.ts
+const INSTALL_AGENTS_PREFERENCE = {
+	id: INSTALL_AGENTS_PREFERENCE_ID,
+	scope: "global"
+};
+const PREFERENCE_SEPARATOR = ",";
+const readInstallAgents = (options = {}) => {
+	const stored = readPreference(INSTALL_AGENTS_PREFERENCE, {}, options);
+	if (stored === null) return [];
+	const { isSkillAgentType } = loadAgentInstall();
+	return stored.split(PREFERENCE_SEPARATOR).map((entry) => entry.trim()).filter((entry) => isSkillAgentType(entry));
+};
+const rememberInstallAgents = (agents, options = {}) => writePreference(INSTALL_AGENTS_PREFERENCE, agents.join(PREFERENCE_SEPARATOR), {}, options);
+//#endregion
+//#region src/cli/utils/install-agent-hooks.ts
+const CLAUDE_AGENT = "claude-code";
+const CURSOR_AGENT = "cursor";
+const CLAUDE_SETTINGS_RELATIVE_PATH = ".claude/settings.json";
+const CLAUDE_HOOK_RELATIVE_PATH = ".claude/hooks/react-doctor.mjs";
+const CLAUDE_HOOK_COMMAND = "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/react-doctor.mjs\"";
+const CURSOR_HOOKS_RELATIVE_PATH = ".cursor/hooks.json";
+const CURSOR_HOOK_RELATIVE_PATH = ".cursor/hooks/react-doctor.mjs";
+const CURSOR_HOOK_COMMAND = "node .cursor/hooks/react-doctor.mjs";
+const CURSOR_HOOKS_SCHEMA_VERSION = 1;
+const LEGACY_HOOK_SCRIPT_PATHS = [".claude/hooks/react-doctor.sh", ".cursor/hooks/react-doctor.sh"];
+const isLegacyHookCommand = (command) => typeof command === "string" && LEGACY_HOOK_SCRIPT_PATHS.some((legacyPath) => command.includes(legacyPath));
+const isManagedHookCommand = (command, installedCommand) => command === installedCommand || isLegacyHookCommand(command);
+const isSupportedAgent = (agent) => agent === CLAUDE_AGENT || agent === CURSOR_AGENT;
+const readJsonFile = (filePath, fallback) => {
+	if (!fs$1.existsSync(filePath)) return fallback;
+	const content = fs$1.readFileSync(filePath, "utf8").trim();
+	if (content.length === 0) return fallback;
+	try {
+		return JSON.parse(content);
+	} catch (error) {
+		if (error instanceof SyntaxError) throw new CliInputError(`Could not parse ${filePath}: the file contains invalid JSON. Fix the syntax errors in this file and re-run the install command.`);
+		throw error;
+	}
+};
+const readJsonFileSafely = (filePath, fallback) => {
+	try {
+		return readJsonFile(filePath, fallback);
+	} catch {
+		return fallback;
+	}
+};
+const findAgentsWithOutdatedReactDoctorHooks = (projectRoot) => {
+	const agents = [];
+	const settings = readJsonFileSafely(path$1.join(projectRoot, CLAUDE_SETTINGS_RELATIVE_PATH), {});
+	if ([...settings.hooks?.PostToolBatch ?? [], ...settings.hooks?.Stop ?? []].some((group) => (group.hooks ?? []).some((hook) => isLegacyHookCommand(hook.command))) || (settings.hooks?.PostToolBatch ?? []).some((group) => (group.hooks ?? []).some((hook) => hook.command === CLAUDE_HOOK_COMMAND))) agents.push(CLAUDE_AGENT);
+	const config = readJsonFileSafely(path$1.join(projectRoot, CURSOR_HOOKS_RELATIVE_PATH), {});
+	if ([...config.hooks?.postToolUse ?? [], ...config.hooks?.stop ?? []].some((handler) => isLegacyHookCommand(handler.command)) || (config.hooks?.postToolUse ?? []).some((handler) => handler.command === CURSOR_HOOK_COMMAND)) agents.push(CURSOR_AGENT);
+	return agents;
+};
+const ensureDirectoryExists = (directoryPath) => {
+	try {
+		fs$1.mkdirSync(directoryPath, { recursive: true });
+	} catch (error) {
+		const code = isErrnoException(error) ? error.code : void 0;
+		if (code === "EACCES" || code === "EPERM") throw new CliInputError(`Could not create directory ${directoryPath}: permission denied. Ensure you have write permissions for this location and re-run the install command.`);
+		if (code === "ENOTDIR" || code === "EEXIST") throw new CliInputError(`Could not create directory ${directoryPath}: a file exists at this path or one of its parent paths. Remove the conflicting file and re-run the install command.`);
+		throw error;
+	}
+};
+const writeJsonFileWithDirectoryCheck = (filePath, value) => {
+	ensureDirectoryExists(path$1.dirname(filePath));
+	writeJsonFile(filePath, value);
+};
+const writeHookScript = (filePath, hookEventName) => {
+	ensureDirectoryExists(path$1.dirname(filePath));
+	fs$1.writeFileSync(filePath, buildAgentHookScript(hookEventName));
+	try {
+		fs$1.rmSync(filePath.replace(/\.mjs$/, ".sh"), { force: true });
+	} catch {}
+};
+const installClaudeHook = (projectRoot) => {
+	const settingsPath = path$1.join(projectRoot, CLAUDE_SETTINGS_RELATIVE_PATH);
+	const hookPath = path$1.join(projectRoot, CLAUDE_HOOK_RELATIVE_PATH);
+	const settings = readJsonFile(settingsPath, {});
+	const hooks = { ...settings.hooks ?? {} };
+	const stripManagedHooks = (groups) => groups.flatMap((group) => {
+		const groupHooks = group.hooks ?? [];
+		const keptHooks = groupHooks.filter((hook) => !isManagedHookCommand(hook.command, CLAUDE_HOOK_COMMAND));
+		if (keptHooks.length === groupHooks.length) return [group];
+		return keptHooks.length > 0 ? [{
+			...group,
+			hooks: keptHooks
+		}] : [];
+	});
+	const stopHooks = stripManagedHooks(hooks.Stop ?? []);
+	stopHooks.push({ hooks: [{
+		type: "command",
+		command: CLAUDE_HOOK_COMMAND
+	}] });
+	hooks.PostToolBatch = stripManagedHooks(hooks.PostToolBatch ?? []);
+	hooks.Stop = stopHooks;
+	writeJsonFileWithDirectoryCheck(settingsPath, {
+		...settings,
+		hooks
+	});
+	writeHookScript(hookPath, "Stop");
+	return [settingsPath, hookPath];
+};
+const installCursorHook = (projectRoot) => {
+	const configPath = path$1.join(projectRoot, CURSOR_HOOKS_RELATIVE_PATH);
+	const hookPath = path$1.join(projectRoot, CURSOR_HOOK_RELATIVE_PATH);
+	const config = readJsonFile(configPath, {});
+	const hooks = { ...config.hooks ?? {} };
+	const stopHooks = (hooks.stop ?? []).filter((handler) => !isManagedHookCommand(handler.command, CURSOR_HOOK_COMMAND));
+	stopHooks.push({
+		command: CURSOR_HOOK_COMMAND,
+		timeout: 120
+	});
+	hooks.postToolUse = (hooks.postToolUse ?? []).filter((handler) => !isManagedHookCommand(handler.command, CURSOR_HOOK_COMMAND));
+	hooks.stop = stopHooks;
+	writeJsonFileWithDirectoryCheck(configPath, {
+		...config,
+		version: config.version ?? CURSOR_HOOKS_SCHEMA_VERSION,
+		hooks
+	});
+	writeHookScript(hookPath, "stop");
+	return [configPath, hookPath];
+};
+const buildAgentHookScript = (hookEventName) => [
+	"import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';",
+	"import { tmpdir } from 'node:os';",
+	"import { join, dirname } from 'node:path';",
+	"import { fileURLToPath } from 'node:url';",
+	"import { spawnSync } from 'node:child_process';",
+	"",
+	"const __filename = fileURLToPath(import.meta.url);",
+	"const __dirname = dirname(__filename);",
+	`const HOOK_EVENT_NAME = ${JSON.stringify(hookEventName)};`,
+	`const MAX_CONTINUATIONS = 1;`,
+	"",
+	"// --verbose scans on large diffs can exceed spawnSync's 1 MiB default.",
+	"const SPAWN_MAX_BUFFER_BYTES = 16 * 1024 * 1024;",
+	"",
+	"const readFileOrEmpty = (source) => {",
+	"  try {",
+	"    return readFileSync(source, 'utf8');",
+	"  } catch {",
+	"    return '';",
+	"  }",
+	"};",
+	"",
+	"const shouldScan = (input) => {",
+	"  if (HOOK_EVENT_NAME === 'Stop') return !input.stop_hook_active;",
+	"  if (input.status && input.status !== 'completed') return false;",
+	"  const loopCount = Number(input.loop_count);",
+	"  return !Number.isFinite(loopCount) || loopCount < MAX_CONTINUATIONS;",
+	"};",
+	"",
+	"const runReactDoctor = (outputPath) => {",
+	"  // Each candidate is a single shell command string (not an args array):",
+	"  // `shell: true` is required to run the Windows `.cmd` shims, and an args",
+	"  // array with `shell: true` trips Node's DEP0190. A missing command exits",
+	"  // 127 via a POSIX shell (no ENOENT error) and 9009 via cmd.exe, so fall",
+	"  // through on those. The local bin is probed with existsSync (its `./`",
+	"  // prefix form is not runnable by cmd.exe at all). With no runner found,",
+	"  // exit 0 silently — stdout is parsed as the hook's JSON.",
+	"  const localBin = process.platform === 'win32'",
+	"    ? 'node_modules\\\\.bin\\\\react-doctor.cmd'",
+	"    : './node_modules/.bin/react-doctor';",
+	"  const commands = [",
+	"    ...(existsSync(localBin)",
+	"      ? [localBin + ' --verbose --scope changed --include-untracked --blocking warning --no-score']",
+	"      : []),",
+	"    'react-doctor --verbose --scope changed --include-untracked --blocking warning --no-score',",
+	"    'pnpm dlx react-doctor@latest --verbose --scope changed --include-untracked --blocking warning --no-score',",
+	"    'npx --yes react-doctor@latest --verbose --scope changed --include-untracked --blocking warning --no-score',",
+	"  ];",
+	"",
+	"  for (const command of commands) {",
+	"    const result = spawnSync(command, { encoding: 'utf8', shell: true, maxBuffer: SPAWN_MAX_BUFFER_BYTES });",
+	"    if (result.error?.code === 'ENOENT' || result.status === 127 || result.status === 9009) continue;",
+	"    try {",
+	"      writeFileSync(outputPath, (result.stdout || '') + (result.stderr || ''));",
+	"    } catch {}",
+	"    return result.status;",
+	"  }",
+	"",
+	"  return 0;",
+	"};",
+	"",
+	"const cleanup = (...paths) => {",
+	"  for (const path of paths) {",
+	"    try { unlinkSync(path); } catch {}",
+	"  }",
+	"};",
+	"",
+	"const main = () => {",
+	"  let input;",
+	"  try {",
+	"    input = JSON.parse(readFileOrEmpty(0) || '{}');",
+	"  } catch {",
+	"    input = {};",
+	"  }",
+	"",
+	"  if (!shouldScan(input)) {",
+	"    process.exit(0);",
+	"  }",
+	"",
+	"  const projectRoot = process.env.CLAUDE_PROJECT_DIR || join(__dirname, '../..');",
+	"  const outputPath = join(tmpdir(), `react-doctor-agent-hook-output-${process.pid}.txt`);",
+	"",
+	"  try {",
+	"    process.chdir(projectRoot);",
+	"  } catch {",
+	"    process.exit(0);",
+	"  }",
+	"",
+	"  const scanResult = runReactDoctor(outputPath);",
+	"  if (scanResult === 0) {",
+	"    cleanup(outputPath);",
+	"    process.exit(0);",
+	"  }",
+	"",
+	"  // The write above is best-effort (unwritable tmpdir), so the read is too",
+	"  // — a hook must never crash the agent loop with a stack trace.",
+	"  const scanOutput = readFileOrEmpty(outputPath).trim();",
+	"  cleanup(outputPath);",
+	"",
+	"  if (!scanOutput) {",
+	"    process.exit(0);",
+	"  }",
+	"",
+	"  const message = `React Doctor found issues in the changed files. Review this output and fix the regressions before finishing. For confirmed issues that cannot be fixed now, create GitHub issues with the rule, file/line, confidence, impact, and proposed fix.\\n\\n${scanOutput}`;",
+	"",
+	"  if (HOOK_EVENT_NAME === 'Stop') {",
+	"    console.log(JSON.stringify({ decision: 'block', reason: message }));",
+	"  } else {",
+	"    console.log(JSON.stringify({ followup_message: message }));",
+	"  }",
+	"};",
+	"",
+	"main();"
+].join("\n");
+const installReactDoctorAgentHooks = (options) => {
+	const installedAgents = [];
+	const files = [];
+	const requestedAgents = options.agents.filter(isSupportedAgent);
+	for (const agent of requestedAgents) {
+		if (agent === CLAUDE_AGENT) {
+			files.push(...installClaudeHook(options.projectRoot));
+			installedAgents.push(agent);
+		}
+		if (agent === CURSOR_AGENT) {
+			files.push(...installCursorHook(options.projectRoot));
+			installedAgents.push(agent);
+		}
+	}
+	return {
+		installedAgents,
+		files
+	};
+};
+//#endregion
+//#region src/cli/utils/install-git-hook-file.ts
+const REACT_DOCTOR_BLOCK_START = "# react-doctor hook start";
+const REACT_DOCTOR_BLOCK_END = "# react-doctor hook end";
+const REACT_DOCTOR_BLOCK_PATTERN_SOURCE = `(?:${REACT_DOCTOR_BLOCK_START}[\\s\\S]*?${REACT_DOCTOR_BLOCK_END}\\n?|# react-doctor hook launcher start[\\s\\S]*?# react-doctor hook launcher end\\n?)`;
+const REACT_DOCTOR_BLOCK_PATTERN = new RegExp(REACT_DOCTOR_BLOCK_PATTERN_SOURCE);
+const ALL_REACT_DOCTOR_BLOCKS_PATTERN = new RegExp(REACT_DOCTOR_BLOCK_PATTERN_SOURCE, "g");
+const SHEBANG = "#!/bin/sh";
+const SHEBANG_PREFIX = "#!";
+const LOCAL_REACT_DOCTOR_BIN = "./node_modules/.bin/react-doctor";
+const PNPM_REACT_DOCTOR_COMMAND = "pnpm dlx react-doctor@latest --staged --blocking warning";
+const NPX_REACT_DOCTOR_COMMAND = "npx --yes react-doctor@latest --staged --blocking warning";
+const buildReactDoctorHookBlock = () => [
+	REACT_DOCTOR_BLOCK_START,
+	"react_doctor_scan_staged_files() {",
+	`  if [ -x "${LOCAL_REACT_DOCTOR_BIN}" ]; then`,
+	`    "${LOCAL_REACT_DOCTOR_BIN}" ${REACT_DOCTOR_COMMAND.replace("react-doctor ", "")}`,
+	"    return",
+	"  fi",
+	"",
+	"  if command -v react-doctor >/dev/null 2>&1; then",
+	`    ${REACT_DOCTOR_COMMAND}`,
+	"    return",
+	"  fi",
+	"",
+	"  if command -v pnpm >/dev/null 2>&1; then",
+	`    ${PNPM_REACT_DOCTOR_COMMAND}`,
+	"    return",
+	"  fi",
+	"",
+	"  if command -v npx >/dev/null 2>&1; then",
+	`    ${NPX_REACT_DOCTOR_COMMAND}`,
+	"    return",
+	"  fi",
+	"",
+	"  printf '%s\\n' \"react-doctor: command not found; skipping staged scan.\"",
+	"}",
+	"",
+	"react_doctor_output=$(mktemp \"${TMPDIR:-/tmp}/react-doctor-hook.XXXXXX\")",
+	"if react_doctor_scan_staged_files > \"$react_doctor_output\" 2>&1; then",
+	"  rm -f \"$react_doctor_output\"",
+	"else",
+	"  cat \"$react_doctor_output\" >&2",
+	"  rm -f \"$react_doctor_output\"",
+	`  printf '%s\\n' "React Doctor found staged regressions." "Run ${REACT_DOCTOR_COMMAND} to inspect." "Want them fixed? Ask your agent to run that command and resolve the findings." >&2`,
+	"fi",
+	REACT_DOCTOR_BLOCK_END
+].join("\n");
+const mergeHookContent = (existingContent) => {
+	const hookBlock = `${buildReactDoctorHookBlock()}\n`;
+	if (REACT_DOCTOR_BLOCK_PATTERN.test(existingContent)) {
+		let isFirstManagedBlock = true;
+		return ensureTrailingNewline(existingContent.replace(ALL_REACT_DOCTOR_BLOCKS_PATTERN, () => {
+			if (isFirstManagedBlock) {
+				isFirstManagedBlock = false;
+				return hookBlock;
+			}
+			return "";
+		}));
+	}
+	if (existingContent.length === 0) return `${SHEBANG}\n\n${hookBlock}`;
+	const normalizedExistingContent = ensureTrailingNewline(existingContent);
+	if (normalizedExistingContent.startsWith(SHEBANG_PREFIX)) {
+		const [shebangLine, ...remainingLines] = normalizedExistingContent.split("\n");
+		return [
+			shebangLine,
+			"",
+			hookBlock.trimEnd(),
+			...remainingLines
+		].join("\n");
+	}
+	return `${SHEBANG}\n\n${hookBlock}${normalizedExistingContent}`;
+};
+const removeLegacyManagedRunner = (projectRoot) => {
+	const runnerPath = path$1.join(projectRoot, LEGACY_HOOK_RUNNER_RELATIVE_PATH);
+	fs$1.rmSync(runnerPath, { force: true });
+	for (const directory of [path$1.dirname(runnerPath), path$1.join(projectRoot, ".react-doctor")]) try {
+		fs$1.rmdirSync(directory);
+	} catch {}
+};
+const installDirectGitHook = (options) => {
+	const didHookExist = fs$1.existsSync(options.hookPath);
+	const nextContent = mergeHookContent(didHookExist ? fs$1.readFileSync(options.hookPath, "utf8") : "");
+	if (options.hooksPathConfig !== void 0) runGit(options.projectRoot, [
+		"config",
+		"core.hooksPath",
+		options.hooksPathConfig
+	]);
+	fs$1.mkdirSync(path$1.dirname(options.hookPath), { recursive: true });
+	fs$1.writeFileSync(options.hookPath, nextContent);
+	fs$1.chmodSync(options.hookPath, 493);
+	removeLegacyManagedRunner(options.projectRoot);
+	return {
+		hookPath: options.hookPath,
+		kind: options.kind ?? "git",
+		status: didHookExist ? "updated" : "created"
+	};
+};
+//#endregion
+//#region src/cli/utils/install-git-hook-config-managers.ts
+const appendStringCommand = (existingCommand) => {
+	const existingCommandText = typeof existingCommand === "string" ? existingCommand : Array.isArray(existingCommand) ? existingCommand.filter((entry) => typeof entry === "string").join("\n") : "";
+	return existingCommandText.includes("react-doctor --staged --blocking warning") ? existingCommandText : [existingCommandText, NON_BLOCKING_REACT_DOCTOR_COMMAND].filter(Boolean).join("\n");
+};
+const appendArrayCommand = (existingCommands) => {
+	const commands = Array.isArray(existingCommands) ? existingCommands.filter((entry) => typeof entry === "string") : typeof existingCommands === "string" ? [existingCommands] : [];
+	return commands.some((command) => command.includes("react-doctor --staged --blocking warning")) ? commands : [...commands, NON_BLOCKING_REACT_DOCTOR_COMMAND];
+};
+const installPackageJsonHook = (options, strategy) => {
+	const packageJsonPath = getPackageJsonPath(options.projectRoot);
+	const didHookExist = fs$1.existsSync(packageJsonPath);
+	const packageJson = readPackageJson(options.projectRoot);
+	const nextPackageJson = isRecord(packageJson) ? { ...packageJson } : {};
+	const parentKeys = strategy.path.slice(0, -1);
+	const leafKey = strategy.path[strategy.path.length - 1];
+	let parent = nextPackageJson;
+	for (const key of parentKeys) {
+		const existing = parent[key];
+		const cloned = isRecord(existing) ? { ...existing } : {};
+		parent[key] = cloned;
+		parent = cloned;
+	}
+	parent[leafKey] = strategy.leafShape === "array" ? appendArrayCommand(parent[leafKey]) : appendStringCommand(parent[leafKey]);
+	writeJsonFile(packageJsonPath, nextPackageJson);
+	removeLegacyManagedRunner(options.projectRoot);
+	return {
+		hookPath: packageJsonPath,
+		kind: strategy.kind,
+		status: didHookExist ? "updated" : "created"
+	};
+};
+const installSimpleGitHooks = (options) => installPackageJsonHook(options, {
+	kind: "simple-git-hooks",
+	path: ["simple-git-hooks", "pre-commit"],
+	leafShape: "string"
+});
+const installGhooks = (options) => installPackageJsonHook(options, {
+	kind: "ghooks",
+	path: [
+		"config",
+		"ghooks",
+		"pre-commit"
+	],
+	leafShape: "string"
+});
+const installPreCommitNpm = (options) => installPackageJsonHook(options, {
+	kind: "pre-commit-npm",
+	path: ["pre-commit"],
+	leafShape: "array"
+});
+const installPrettyQuick = (options) => installPackageJsonHook(options, {
+	kind: "pretty-quick",
+	path: ["gitHooks", "pre-commit"],
+	leafShape: "string"
+});
+const installYorkie = (options) => installPackageJsonHook(options, {
+	kind: "yorkie",
+	path: ["gitHooks", "pre-commit"],
+	leafShape: "string"
+});
+const installGitHooksJs = (options) => installPackageJsonHook(options, {
+	kind: "git-hooks-js",
+	path: ["git-hooks", "pre-commit"],
+	leafShape: "string"
+});
+const appendIndentedBlockToTopLevelSection = (content, sectionName, block) => {
+	const normalizedContent = ensureTrailingNewline(content);
+	const match = new RegExp(`^${sectionName}:\\s*$`, "m").exec(normalizedContent);
+	if (match === null) return ensureTrailingNewline([
+		normalizedContent.trimEnd(),
+		"",
+		`${sectionName}:`,
+		...block,
+		""
+	].filter((line, index) => index > 0 || line.length > 0).join("\n"));
+	const sectionStartIndex = match.index;
+	const nextSectionPattern = /^[A-Za-z0-9_-]+:\s*$/gm;
+	nextSectionPattern.lastIndex = sectionStartIndex + match[0].length;
+	let nextSectionMatch = nextSectionPattern.exec(normalizedContent);
+	while (nextSectionMatch !== null && nextSectionMatch.index === sectionStartIndex) nextSectionMatch = nextSectionPattern.exec(normalizedContent);
+	const insertIndex = nextSectionMatch?.index ?? normalizedContent.length;
+	const prefix = normalizedContent.slice(0, insertIndex).trimEnd();
+	const suffix = normalizedContent.slice(insertIndex);
+	return ensureTrailingNewline([
+		prefix,
+		...block,
+		suffix.trimStart()
+	].join("\n"));
+};
+const findTopLevelSectionRange = (content, sectionName) => {
+	const match = new RegExp(`^${sectionName}:\\s*$`, "m").exec(content);
+	if (match === null) return null;
+	const headerLineEndIndex = content.indexOf("\n", match.index);
+	const headerEndIndex = headerLineEndIndex === -1 ? match.index + match[0].length : headerLineEndIndex + 1;
+	const nextSectionPattern = /^[A-Za-z0-9_-]+:\s*$/gm;
+	nextSectionPattern.lastIndex = headerEndIndex;
+	return {
+		headerEndIndex,
+		contentEndIndex: nextSectionPattern.exec(content)?.index ?? content.length
+	};
+};
+const appendLefthookCommand = (content) => {
+	const normalizedContent = ensureTrailingNewline(content);
+	const sectionRange = findTopLevelSectionRange(normalizedContent, "pre-commit");
+	const reactDoctorCommandBlock = [
+		"    react-doctor:",
+		`      run: ${NON_BLOCKING_REACT_DOCTOR_COMMAND}`,
+		""
+	];
+	if (sectionRange === null) return ensureTrailingNewline([
+		normalizedContent.trimEnd(),
+		"",
+		"pre-commit:",
+		"  commands:",
+		...reactDoctorCommandBlock
+	].filter((line, index) => index > 0 || line.length > 0).join("\n"));
+	const sectionContent = normalizedContent.slice(sectionRange.headerEndIndex, sectionRange.contentEndIndex);
+	const commandsMatch = /^  commands:\s*$/m.exec(sectionContent);
+	const insertIndex = commandsMatch === null ? sectionRange.headerEndIndex : sectionRange.headerEndIndex + sectionContent.indexOf(commandsMatch[0]) + commandsMatch[0].length + 1;
+	const insertBlock = commandsMatch === null ? ["  commands:", ...reactDoctorCommandBlock].join("\n") : reactDoctorCommandBlock.join("\n");
+	return ensureTrailingNewline(`${normalizedContent.slice(0, insertIndex)}${insertBlock}${normalizedContent.slice(insertIndex)}`);
+};
+const installLefthook = (options) => {
+	const didHookExist = fs$1.existsSync(options.hookPath);
+	const existingContent = didHookExist ? fs$1.readFileSync(options.hookPath, "utf8") : "";
+	if (!existingContent.includes("react-doctor")) {
+		const nextContent = appendLefthookCommand(existingContent);
+		fs$1.mkdirSync(path$1.dirname(options.hookPath), { recursive: true });
+		fs$1.writeFileSync(options.hookPath, nextContent);
+	}
+	removeLegacyManagedRunner(options.projectRoot);
+	return {
+		hookPath: options.hookPath,
+		kind: "lefthook",
+		status: didHookExist ? "updated" : "created"
+	};
+};
+const installPreCommit = (options) => {
+	const didHookExist = fs$1.existsSync(options.hookPath);
+	const existingContent = didHookExist ? fs$1.readFileSync(options.hookPath, "utf8") : "";
+	if (!existingContent.includes("id: react-doctor")) {
+		const hasReposKey = /^repos:\s*$/m.test(existingContent);
+		const localHookBlock = [
+			"  - repo: local",
+			"    hooks:",
+			"      - id: react-doctor",
+			"        name: react-doctor",
+			`        entry: sh -c '${NON_BLOCKING_REACT_DOCTOR_COMMAND}'`,
+			"        language: system",
+			"        pass_filenames: false",
+			""
+		].join("\n");
+		const nextContent = hasReposKey ? `${ensureTrailingNewline(existingContent)}${localHookBlock}` : `repos:\n${localHookBlock}`;
+		fs$1.mkdirSync(path$1.dirname(options.hookPath), { recursive: true });
+		fs$1.writeFileSync(options.hookPath, nextContent);
+	}
+	removeLegacyManagedRunner(options.projectRoot);
+	return {
+		hookPath: options.hookPath,
+		kind: "pre-commit",
+		status: didHookExist ? "updated" : "created"
+	};
+};
+const installOvercommit = (options) => {
+	const didHookExist = fs$1.existsSync(options.hookPath);
+	const existingContent = didHookExist ? fs$1.readFileSync(options.hookPath, "utf8") : "";
+	if (!existingContent.includes("ReactDoctor")) {
+		const nextContent = appendIndentedBlockToTopLevelSection(existingContent, "PreCommit", [
+			"  ReactDoctor:",
+			"    enabled: true",
+			`    command: ['sh', '-c', '${NON_BLOCKING_REACT_DOCTOR_COMMAND}']`,
+			""
+		]);
+		fs$1.mkdirSync(path$1.dirname(options.hookPath), { recursive: true });
+		fs$1.writeFileSync(options.hookPath, nextContent);
+	}
+	removeLegacyManagedRunner(options.projectRoot);
+	return {
+		hookPath: options.hookPath,
+		kind: "overcommit",
+		status: didHookExist ? "updated" : "created"
+	};
+};
+//#endregion
+//#region src/cli/utils/install-git-hook.ts
+const isHuskyProject = (projectRoot) => fs$1.existsSync(path$1.join(projectRoot, ".husky")) || packageHasDependency(projectRoot, "husky");
+const isVitePlusProject = (projectRoot) => packageHasDependency(projectRoot, "vite-plus");
+const isSimpleGitHooksProject = (projectRoot) => {
+	const packageJson = readPackageJson(projectRoot);
+	return isRecord(packageJson) && isRecord(packageJson["simple-git-hooks"]) || packageHasDependency(projectRoot, "simple-git-hooks") || fs$1.existsSync(path$1.join(projectRoot, ".simple-git-hooks.cjs"));
+};
+const getLefthookConfigPath = (projectRoot) => {
+	for (const fileName of LEFTHOOK_CONFIG_FILES) {
+		const filePath = path$1.join(projectRoot, fileName);
+		if (fs$1.existsSync(filePath)) return filePath;
+	}
+	return packageHasDependency(projectRoot, "lefthook") ? path$1.join(projectRoot, LEFTHOOK_CONFIG_FILES[0] ?? "lefthook.yml") : null;
+};
+const isPreCommitProject = (projectRoot) => fs$1.existsSync(path$1.join(projectRoot, PRE_COMMIT_CONFIG_FILE));
+const isOvercommitProject = (projectRoot) => fs$1.existsSync(path$1.join(projectRoot, ".overcommit.yml")) || packageHasDependency(projectRoot, "overcommit");
+const isYorkieProject = (projectRoot) => packageHasRecordKey(projectRoot, "gitHooks") || packageHasDependency(projectRoot, "yorkie");
+const isGhooksProject = (projectRoot) => packageHasDependency(projectRoot, "ghooks") || packageHasNestedRecordKey(projectRoot, "config", "ghooks");
+const isGitHooksJsProject = (projectRoot) => packageHasRecordKey(projectRoot, "git-hooks") || packageHasDependency(projectRoot, "git-hooks-js");
+const isPreCommitNpmProject = (projectRoot) => packageHasDependency(projectRoot, "pre-commit");
+const isPrettyQuickProject = (projectRoot) => packageHasDependency(projectRoot, "pretty-quick");
+const detectGitHookTarget = (projectRoot) => {
+	if (runGit(projectRoot, ["rev-parse", "--is-inside-work-tree"]) !== "true") return null;
+	const topLevel = runGit(projectRoot, ["rev-parse", "--show-toplevel"]) ?? projectRoot;
+	const configuredHooksPath = runGit(projectRoot, [
+		"config",
+		"--path",
+		"--get",
+		"core.hooksPath"
+	]);
+	if (configuredHooksPath !== null && configuredHooksPath.length > 0) return {
+		hookPath: path$1.join(resolveGitPath(topLevel, configuredHooksPath), HOOK_FILE_NAME),
+		runnerRoot: topLevel,
+		kind: "configured"
+	};
+	if (isHuskyProject(topLevel)) return {
+		hookPath: path$1.join(topLevel, HUSKY_HOOKS_PATH, HOOK_FILE_NAME),
+		runnerRoot: topLevel,
+		kind: "husky",
+		hooksPathConfig: HUSKY_HOOKS_PATH
+	};
+	if (isVitePlusProject(topLevel)) return {
+		hookPath: path$1.join(topLevel, VITE_PLUS_HOOKS_PATH, HOOK_FILE_NAME),
+		runnerRoot: topLevel,
+		kind: "vite-plus",
+		hooksPathConfig: VITE_PLUS_HOOKS_PATH
+	};
+	if (isSimpleGitHooksProject(topLevel)) return {
+		hookPath: path$1.join(topLevel, "package.json"),
+		runnerRoot: topLevel,
+		kind: "simple-git-hooks"
+	};
+	const lefthookConfigPath = getLefthookConfigPath(topLevel);
+	if (lefthookConfigPath !== null) return {
+		hookPath: lefthookConfigPath,
+		runnerRoot: topLevel,
+		kind: "lefthook"
+	};
+	if (isPreCommitProject(topLevel)) return {
+		hookPath: path$1.join(topLevel, PRE_COMMIT_CONFIG_FILE),
+		runnerRoot: topLevel,
+		kind: "pre-commit"
+	};
+	if (isOvercommitProject(topLevel)) return {
+		hookPath: path$1.join(topLevel, OVERCOMMIT_CONFIG_FILE),
+		runnerRoot: topLevel,
+		kind: "overcommit"
+	};
+	if (isYorkieProject(topLevel)) return {
+		hookPath: getPackageJsonPath(topLevel),
+		runnerRoot: topLevel,
+		kind: "yorkie"
+	};
+	if (isGhooksProject(topLevel)) return {
+		hookPath: getPackageJsonPath(topLevel),
+		runnerRoot: topLevel,
+		kind: "ghooks"
+	};
+	if (isGitHooksJsProject(topLevel)) return {
+		hookPath: getPackageJsonPath(topLevel),
+		runnerRoot: topLevel,
+		kind: "git-hooks-js"
+	};
+	if (isPreCommitNpmProject(topLevel)) return {
+		hookPath: getPackageJsonPath(topLevel),
+		runnerRoot: topLevel,
+		kind: "pre-commit-npm"
+	};
+	if (isPrettyQuickProject(topLevel)) return {
+		hookPath: getPackageJsonPath(topLevel),
+		runnerRoot: topLevel,
+		kind: "pretty-quick"
+	};
+	const hookPath = runGit(projectRoot, [
+		"rev-parse",
+		"--git-path",
+		HOOK_RELATIVE_PATH
+	]);
+	if (hookPath === null || hookPath.length === 0) return null;
+	return {
+		hookPath: resolveGitPath(projectRoot, hookPath),
+		runnerRoot: topLevel,
+		kind: "git"
+	};
+};
+const installReactDoctorGitHook = (options) => {
+	if (options.kind === "simple-git-hooks") return installSimpleGitHooks(options);
+	if (options.kind === "lefthook") return installLefthook(options);
+	if (options.kind === "pre-commit") return installPreCommit(options);
+	if (options.kind === "overcommit") return installOvercommit(options);
+	if (options.kind === "yorkie") return installYorkie(options);
+	if (options.kind === "ghooks") return installGhooks(options);
+	if (options.kind === "git-hooks-js") return installGitHooksJs(options);
+	if (options.kind === "pre-commit-npm") return installPreCommitNpm(options);
+	if (options.kind === "pretty-quick") return installPrettyQuick(options);
+	return installDirectGitHook(options);
+};
+//#endregion
+//#region src/cli/utils/install-react-doctor.ts
+const SETUP_OPTION_GIT_HOOK = "git-hook";
+const SETUP_OPTION_AGENT_HOOKS = "agent-hooks";
+const SETUP_OPTION_SKIP = "skip";
+const CONFIG_ONLY_GIT_HOOK_KINDS = new Set([
+	"ghooks",
+	"git-hooks-js",
+	"lefthook",
+	"overcommit",
+	"pre-commit",
+	"pre-commit-npm",
+	"pretty-quick",
+	"simple-git-hooks",
+	"yorkie"
+]);
+const PACKAGE_MANAGER_LOCKFILES = [
+	{
+		packageManager: "pnpm",
+		fileName: "pnpm-lock.yaml"
+	},
+	{
+		packageManager: "yarn",
+		fileName: "yarn.lock"
+	},
+	{
+		packageManager: "bun",
+		fileName: "bun.lockb"
+	},
+	{
+		packageManager: "bun",
+		fileName: "bun.lock"
+	},
+	{
+		packageManager: "npm",
+		fileName: "package-lock.json"
+	}
+];
+const findNearestFileDirectory = (startDirectory, fileNames) => {
+	let currentDirectory = path$1.resolve(startDirectory);
+	while (true) {
+		if (fileNames.some((fileName) => fs$1.existsSync(path$1.join(currentDirectory, fileName)))) return currentDirectory;
+		const parentDirectory = path$1.dirname(currentDirectory);
+		if (parentDirectory === currentDirectory) return null;
+		currentDirectory = parentDirectory;
+	}
+};
+const detectPackageManager = (projectRoot) => {
+	let currentDirectory = path$1.resolve(projectRoot);
+	while (true) {
+		const packageJson = readPackageJson(currentDirectory);
+		if (isRecord(packageJson) && typeof packageJson.packageManager === "string") {
+			const packageManagerName = packageJson.packageManager.split("@")[0];
+			if (packageManagerName === "pnpm" || packageManagerName === "yarn" || packageManagerName === "bun" || packageManagerName === "npm") return packageManagerName;
+		}
+		const parentDirectory = path$1.dirname(currentDirectory);
+		if (parentDirectory === currentDirectory) break;
+		currentDirectory = parentDirectory;
+	}
+	const lockfileDirectory = findNearestFileDirectory(projectRoot, PACKAGE_MANAGER_LOCKFILES.map((lockfile) => lockfile.fileName));
+	return PACKAGE_MANAGER_LOCKFILES.find((lockfile) => lockfileDirectory !== null && fs$1.existsSync(path$1.join(lockfileDirectory, lockfile.fileName)))?.packageManager ?? "npm";
+};
+const packageManagerNeedsWorkspaceFlag = (projectRoot) => fs$1.existsSync(path$1.join(projectRoot, "pnpm-workspace.yaml")) || findNearestFileDirectory(projectRoot, ["pnpm-workspace.yaml"]) !== null;
+const buildInstallCommand = (projectRoot) => {
+	const packageManager = detectPackageManager(projectRoot);
+	const packageSpecifier = `${DOCTOR_PACKAGE_NAME}@latest`;
+	if (packageManager === "npm") return {
+		command: "npm",
+		args: [
+			"install",
+			"--save-dev",
+			packageSpecifier
+		],
+		cwd: projectRoot
+	};
+	if (packageManager === "yarn") return {
+		command: "yarn",
+		args: [
+			"add",
+			"--dev",
+			packageSpecifier
+		],
+		cwd: projectRoot
+	};
+	if (packageManager === "bun") return {
+		command: "bun",
+		args: [
+			"add",
+			"--dev",
+			packageSpecifier
+		],
+		cwd: projectRoot
+	};
+	return {
+		command: "pnpm",
+		args: [
+			"add",
+			"--save-dev",
+			...packageManagerNeedsWorkspaceFlag(projectRoot) ? ["-w"] : [],
+			packageSpecifier
+		],
+		cwd: projectRoot
+	};
+};
+const execFileAsync = promisify(execFile);
+const defaultInstallDependencyRunner = async (input) => {
+	await execFileAsync(input.command, [...input.args], {
+		cwd: input.cwd,
+		env: {
+			...process.env,
+			REACT_DOCTOR_INSTALL: "1"
+		},
+		shell: process.platform === "win32"
+	});
+};
+const isSupplyChainTrustError = (error) => {
+	const candidate = error;
+	const haystack = [
+		candidate?.stderr,
+		candidate?.stdout,
+		candidate?.message
+	].map((part) => String(part ?? "")).join("\n");
+	return /ERR_PNPM_TRUST_DOWNGRADE|trust downgrade/i.test(haystack);
+};
+const formatInstallCommand = (input) => [input.command, ...input.args].join(" ");
+const installReactDoctorDependency = async (options) => {
+	const packageJson = readPackageJson(options.projectRoot);
+	if (!isRecord(packageJson)) return {
+		dependencyStatus: "skipped",
+		dependencyReason: "missing-or-invalid-package-json"
+	};
+	if (hasDoctorDependency(packageJson)) return { dependencyStatus: "existing" };
+	if (packageJson.devDependencies !== void 0 && !isRecord(packageJson.devDependencies)) return {
+		dependencyStatus: "skipped",
+		dependencyReason: "invalid-dev-dependencies"
+	};
+	const runnerInput = buildInstallCommand(options.projectRoot);
+	try {
+		await (options.runner ?? defaultInstallDependencyRunner)(runnerInput);
+	} catch (error) {
+		return {
+			dependencyStatus: "skipped",
+			dependencyReason: isSupplyChainTrustError(error) ? "trust-policy-blocked" : "install-command-failed",
+			installCommand: formatInstallCommand(runnerInput)
+		};
+	}
+	return { dependencyStatus: "created" };
+};
+const buildManualGitHookTarget = (hookPath, projectRoot) => ({
+	hookPath,
+	runnerRoot: projectRoot,
+	kind: "git"
+});
+const formatGitHookInstallMessage = (hookResult) => {
+	if (CONFIG_ONLY_GIT_HOOK_KINDS.has(hookResult.kind)) return `React Doctor pre-commit config ${hookResult.status} at ${hookResult.hookPath}. Run your hook manager's install command if hooks are not already installed.`;
+	return `React Doctor pre-commit hook ${hookResult.status} at ${hookResult.hookPath}.`;
+};
+const formatDependencyInstallMessage = (result) => {
+	if (result.dependencyStatus === "created") return "Installed dev dependency: react-doctor.";
+	if (result.dependencyStatus === "existing") return "React Doctor dependency already exists.";
+	if (result.dependencyReason === "invalid-dev-dependencies") return "Skipped dev dependency install: devDependencies field is not an object.";
+	if (result.dependencyReason === "trust-policy-blocked") return "Local install skipped by your package manager's supply-chain trust policy (safe to ignore for pre-release packages).";
+	if (result.dependencyReason === "install-command-failed") return "Local install failed: your package manager rejected the command.";
+	return "Skipped dev dependency install: package.json missing or invalid.";
+};
+const buildDependencyFollowUp = (result) => {
+	if (result.dependencyReason !== "trust-policy-blocked" && result.dependencyReason !== "install-command-failed") return;
+	return `  React Doctor still works via \`npx react-doctor\`. To install locally: ${result.installCommand ?? `npm install --save-dev react-doctor@latest`}`;
+};
+const installReactDoctorPackageSetup = async (projectRoot, dependencyRunner) => {
+	installReactDoctorScriptStep(projectRoot);
+	const dependencySpinner = spinner("Installing React Doctor package...").start();
+	try {
+		const dependencyResult = await installReactDoctorDependency({
+			projectRoot,
+			runner: dependencyRunner
+		});
+		recordCount(METRIC.installDependency, 1, {
+			status: dependencyResult.dependencyStatus,
+			reason: dependencyResult.dependencyReason ?? null,
+			packageManager: detectPackageManager(projectRoot)
+		});
+		if (dependencyResult.dependencyStatus === "skipped") {
+			const message = formatDependencyInstallMessage(dependencyResult);
+			if (dependencyResult.dependencyReason === "trust-policy-blocked") dependencySpinner.warn(message);
+			else dependencySpinner.fail(message);
+			const followUp = buildDependencyFollowUp(dependencyResult);
+			if (followUp !== void 0) cliLogger.dim(followUp);
+			return dependencyResult;
+		}
+		dependencySpinner.succeed(formatDependencyInstallMessage(dependencyResult));
+		return dependencyResult;
+	} catch (error) {
+		dependencySpinner.fail("Failed to install React Doctor package.");
+		throw error;
+	}
+};
+const getSkillSourceDirectory = () => {
+	const distDirectory = path$1.dirname(fileURLToPath(import.meta.url));
+	return path$1.join(distDirectory, "skills", SKILL_NAME);
+};
+const canInstallNativeAgentHooks = (agents) => agents.some((agent) => agent === "claude-code" || agent === "cursor");
+const installReactDoctorSkillStep = async (sourceDir, selectedAgents, projectRoot) => {
+	const { getSkillAgentConfig, installSkillsFromSource, SKILL_MANIFEST_FILE } = loadAgentInstall();
+	const installSpinner = spinner(`Installing ${SKILL_NAME} skill...`).start();
+	try {
+		const installResult = await installSkillsFromSource({
+			source: sourceDir,
+			agents: selectedAgents,
+			cwd: projectRoot,
+			mode: "copy"
+		});
+		if (installResult.skills.length === 0) throw new Error(`Could not parse ${SKILL_MANIFEST_FILE} for ${SKILL_NAME} (missing or invalid frontmatter).`);
+		if (installResult.failed.length > 0) throw new Error(installResult.failed.map((failure) => `${getSkillAgentConfig(failure.agent).displayName}: ${failure.error}`).join("\n"));
+		installSpinner.succeed(`${SKILL_NAME} skill installed for ${selectedAgents.map((agent) => getSkillAgentConfig(agent).displayName).join(", ")}.`);
+	} catch (error) {
+		installSpinner.fail(`Failed to install ${SKILL_NAME} skill.`);
+		throw error;
+	}
+};
+const installReactDoctorGitHookStep = (gitHookTarget) => {
+	const hookSpinner = spinner("Installing React Doctor pre-commit hook...").start();
+	try {
+		const hookResult = installReactDoctorGitHook({
+			hookPath: gitHookTarget.hookPath,
+			projectRoot: gitHookTarget.runnerRoot,
+			kind: gitHookTarget.kind,
+			hooksPathConfig: gitHookTarget.hooksPathConfig
+		});
+		hookSpinner.succeed(formatGitHookInstallMessage(hookResult));
+		recordCount(METRIC.installGitHook, 1, { kind: hookResult.kind });
+	} catch (error) {
+		hookSpinner.fail("Failed to install React Doctor pre-commit hook.");
+		throw error;
+	}
+};
+const installReactDoctorAgentHooksStep = (projectRoot, selectedAgents) => {
+	const { getSkillAgentConfig } = loadAgentInstall();
+	const hookSpinner = spinner("Installing React Doctor agent hooks...").start();
+	try {
+		const hookResult = installReactDoctorAgentHooks({
+			projectRoot,
+			agents: selectedAgents
+		});
+		if (hookResult.installedAgents.length === 0) hookSpinner.succeed("No supported native agent hook targets selected.");
+		else {
+			hookSpinner.succeed(`React Doctor agent hooks installed for ${hookResult.installedAgents.map((agent) => getSkillAgentConfig(agent).displayName).join(", ")}.`);
+			recordCount(METRIC.installAgentHooks, 1, {
+				agentsCount: hookResult.installedAgents.length,
+				hookEvent: "stop"
+			});
+		}
+	} catch (error) {
+		hookSpinner.fail("Failed to install React Doctor agent hooks.");
+		throw error;
+	}
+};
+const installReactDoctorWorkflowStep = async (projectRoot) => {
+	return reportWorkflowResult(spinner("Adding GitHub Actions workflow...").start(), installReactDoctorWorkflow(projectRoot, await detectDefaultBranch(projectRoot) ?? void 0), projectRoot);
+};
+const upgradeReactDoctorWorkflowStep = (projectRoot) => {
+	const workflowSpinner = spinner("Upgrading GitHub Actions workflow to v2...").start();
+	const upgradeResult = upgradeReactDoctorWorkflowInPlace(projectRoot);
+	if (upgradeResult.status === "failed") {
+		workflowSpinner.fail("Couldn't update the GitHub Actions workflow.");
+		return false;
+	}
+	if (upgradeResult.status === "not-needed") {
+		workflowSpinner.succeed("GitHub Actions workflow already up to date.");
+		return false;
+	}
+	workflowSpinner.succeed(`Upgraded the GitHub Actions workflow to v2 at ${path$1.relative(projectRoot, upgradeResult.workflowPath)}.`);
+	recordCount(METRIC.installWorkflow, 1, { kind: "upgrade" });
+	return true;
+};
+const runInstallReactDoctor = async (options = {}) => {
+	const { getSkillAgentConfig, SKILL_MANIFEST_FILE } = loadAgentInstall();
+	const requestedProjectRoot = options.projectRoot ?? process.cwd();
+	const projectRoot = findNearestPackageDirectory(requestedProjectRoot) ?? requestedProjectRoot;
+	const sourceDir = options.sourceDir ?? getSkillSourceDirectory();
+	if (!fs$1.existsSync(path$1.join(sourceDir, SKILL_MANIFEST_FILE))) {
+		cliLogger.error(`Could not locate the ${SKILL_NAME} skill bundled with this package.`);
+		process.exitCode = 1;
+		return;
+	}
+	const detectedAgents = options.detectedAgents ?? await detectAvailableAgents();
+	if (detectedAgents.length === 0) {
+		cliLogger.error("No supported coding agents detected.");
+		cliLogger.dim("  Looked for binaries on PATH (claude, codex, cursor, droid, gemini, copilot, opencode, pi)");
+		cliLogger.dim("  and config dirs in $HOME (~/.claude, ~/.cursor, ~/.codex, ~/.gemini, ...).");
+		process.exitCode = 1;
+		return;
+	}
+	const skipPrompts = shouldSkipPrompts({ yes: options.yes });
+	const gitHookTarget = options.gitHookPath === void 0 ? detectGitHookTarget(projectRoot) : options.gitHookPath === null ? null : buildManualGitHookTarget(options.gitHookPath, projectRoot);
+	const gitHookPath = gitHookTarget?.hookPath;
+	const promptOptions = options.onPromptCancel === void 0 ? {} : { onCancel: options.onPromptCancel };
+	const prompt = options.prompt ?? prompts;
+	const workflowTargetPath = getReactDoctorWorkflowPath(projectRoot);
+	const existingWorkflow = readReactDoctorWorkflow(projectRoot);
+	const canInstallWorkflow = !fs$1.existsSync(workflowTargetPath);
+	const canUpgradeWorkflow = existingWorkflow !== null && workflowUsesV1Action(existingWorkflow.content) && !hasHandledActionUpgrade(projectRoot);
+	const ciPromptOutcome = canInstallWorkflow && !options.yes && !skipPrompts && !hasHandledCiPrompt(projectRoot) ? await askAddToGitHubActions(prompt) : null;
+	const shouldInstallWorkflow = canInstallWorkflow && (Boolean(options.yes) || ciPromptOutcome === "yes");
+	const upgradePromptOutcome = canUpgradeWorkflow && !options.yes && !skipPrompts ? await askUpgradeActionVersion(prompt) : null;
+	const shouldUpgradeWorkflow = canUpgradeWorkflow && (Boolean(options.yes) || upgradePromptOutcome === "yes");
+	if (upgradePromptOutcome === "no" && !options.dryRun) recordActionUpgradeDecision(projectRoot, "declined");
+	if ((ciPromptOutcome === "yes" || ciPromptOutcome === "no") && !options.dryRun) recordCiPromptDecision(projectRoot, ciPromptOutcome === "yes" ? "accepted" : "declined");
+	const rememberedAgents = options.lastSelectedAgents ?? readInstallAgents();
+	const defaultSelectedAgents = computeDefaultSelectedAgents(detectedAgents, rememberedAgents);
+	const usedRememberedAgents = rememberedAgents.some((agent) => detectedAgents.includes(agent));
+	const selectedAgents = skipPrompts ? detectedAgents : (await prompt({
+		type: "multiselect",
+		name: "agents",
+		message: `Install the ${highlighter.info(`/react-doctor`)} skill for:`,
+		choices: detectedAgents.map((agent) => ({
+			title: getSkillAgentConfig(agent).displayName,
+			value: agent,
+			selected: defaultSelectedAgents.includes(agent)
+		})),
+		instructions: false,
+		min: 1
+	}, promptOptions)).agents ?? [];
+	if (selectedAgents.length === 0) return;
+	if (!skipPrompts && !options.dryRun) rememberInstallAgents(selectedAgents);
+	let dependencyResult;
+	if (!options.dryRun) {
+		await installReactDoctorSkillStep(sourceDir, selectedAgents, projectRoot);
+		dependencyResult = await installReactDoctorPackageSetup(projectRoot, options.installDependencyRunner);
+	}
+	let didInstallWorkflow = false;
+	if (!options.dryRun && (shouldInstallWorkflow || shouldUpgradeWorkflow)) {
+		cliLogger.break();
+		if (shouldInstallWorkflow) didInstallWorkflow = await installReactDoctorWorkflowStep(projectRoot);
+		else if (upgradeReactDoctorWorkflowStep(projectRoot)) recordActionUpgradeDecision(projectRoot, "accepted");
+	}
+	const setupActionChoices = [...gitHookPath === null || gitHookPath === void 0 ? [] : [{
+		title: "Pre-commit hook",
+		description: "Check staged changes before each commit",
+		value: SETUP_OPTION_GIT_HOOK,
+		selected: true
+	}], ...canInstallNativeAgentHooks(selectedAgents) ? [{
+		title: "Agent hooks",
+		description: "Ask Claude Code or Cursor to scan after code edits",
+		value: SETUP_OPTION_AGENT_HOOKS,
+		selected: Boolean(options.agentHooks)
+	}] : []];
+	const setupChoices = setupActionChoices.length === 0 ? [] : [{
+		title: "Skip optional setup",
+		description: "Install only the agent skill and package setup",
+		value: SETUP_OPTION_SKIP,
+		selected: false
+	}, ...setupActionChoices];
+	if (setupChoices.length > 0 && !options.dryRun) cliLogger.break();
+	const selectedSetupOptions = skipPrompts || setupChoices.length === 0 ? [] : (await prompt({
+		type: "multiselect",
+		name: "setupOptions",
+		message: "Select additional React Doctor setup:",
+		choices: setupChoices,
+		instructions: false
+	}, promptOptions)).setupOptions ?? [];
+	const selectedSetupActions = selectedSetupOptions.filter((setupOption) => setupOption !== SETUP_OPTION_SKIP);
+	const didSkipOptionalSetup = selectedSetupActions.length === 0 && selectedSetupOptions.includes(SETUP_OPTION_SKIP);
+	const shouldInstallGitHook = gitHookPath != null && (Boolean(options.yes) || !didSkipOptionalSetup && selectedSetupActions.includes(SETUP_OPTION_GIT_HOOK));
+	const shouldInstallAgentHooks = Boolean(options.agentHooks) || !didSkipOptionalSetup && selectedSetupActions.includes(SETUP_OPTION_AGENT_HOOKS);
+	if (!options.dryRun) {
+		if (shouldInstallGitHook && gitHookTarget != null) installReactDoctorGitHookStep(gitHookTarget);
+		if (shouldInstallAgentHooks) installReactDoctorAgentHooksStep(projectRoot, selectedAgents);
+	}
+	if (options.dryRun) {
+		cliLogger.log(`Dry run — would install ${SKILL_NAME} skill for:`);
+		for (const agent of selectedAgents) cliLogger.dim(`  - ${getSkillAgentConfig(agent).displayName}`);
+		cliLogger.dim(`  Source: ${sourceDir}`);
+		cliLogger.dim("  Package script: doctor (or react-doctor if doctor exists)");
+		cliLogger.dim("  Dev dependency: react-doctor");
+		if (shouldInstallGitHook) cliLogger.dim(`  Git hook: ${gitHookPath}`);
+		if (shouldInstallAgentHooks) cliLogger.dim("  Agent hooks: Claude Code / Cursor when selected");
+		if (shouldInstallWorkflow) cliLogger.dim(`  GitHub Actions workflow: ${path$1.relative(projectRoot, workflowTargetPath)}`);
+		if (shouldUpgradeWorkflow) cliLogger.dim(`  Upgrade GitHub Actions workflow to v2: ${path$1.relative(projectRoot, workflowTargetPath)}`);
+		return;
+	}
+	recordCount(METRIC.installCompleted, 1, {
+		agentsCount: selectedAgents.length,
+		agentsDetected: detectedAgents.length,
+		usedRememberedAgents,
+		gitHook: shouldInstallGitHook,
+		agentHooks: shouldInstallAgentHooks,
+		workflow: didInstallWorkflow,
+		dependencyStatus: dependencyResult?.dependencyStatus ?? "skipped",
+		packageManager: detectPackageManager(projectRoot)
+	});
+	for (const agent of selectedAgents) recordCount(METRIC.installAgent, 1, { agent });
+};
+//#endregion
+export { askUpgradeActionVersion as a, recordCiPromptDecision as c, installReactDoctorAgentHooks as i, hasHandledActionUpgrade as l, runInstallReactDoctor as n, askAddToGitHubActions as o, findAgentsWithOutdatedReactDoctorHooks as r, hasHandledCiPrompt as s, getSkillSourceDirectory as t, recordActionUpgradeDecision as u };
+
+//# sourceMappingURL=install-react-doctor-WkrWOqc4.js.map
+//# debugId=4d81384c-7b21-5a86-8009-156ce6e4d5c8

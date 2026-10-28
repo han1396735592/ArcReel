@@ -1,0 +1,43 @@
+export interface SvgoConfig {
+    [key: string]: any;
+}
+/** Leva toggles for the editor Config panel (SVGO plugin names). */
+export declare const defaultPlugins: {
+    cleanupAttrs: boolean;
+    cleanupEnableBackground: boolean;
+    cleanupIds: boolean;
+    cleanupNumericValues: boolean;
+    collapseGroups: boolean;
+    convertColors: boolean;
+    convertPathData: boolean;
+    convertShapeToPath: boolean;
+    convertStyleToAttrs: boolean;
+    convertTransform: boolean;
+    mergePaths: boolean;
+    moveGroupAttrsToElems: boolean;
+    removeComments: boolean;
+    removeDesc: boolean;
+    removeDimensions: boolean;
+    removeDoctype: boolean;
+    removeEditorsNSData: boolean;
+    removeEmptyAttrs: boolean;
+    removeEmptyContainers: boolean;
+    removeEmptyText: boolean;
+    removeHiddenElems: boolean;
+    removeMetadata: boolean;
+    removeNonInheritableGroupAttrs: boolean;
+    removeRasterImages: boolean;
+    removeTitle: boolean;
+    removeUnknownsAndDefaults: boolean;
+    removeUnusedNS: boolean;
+    removeUselessDefs: boolean;
+    removeUselessStrokeAndFill: boolean;
+    removeViewBox: boolean;
+    removeXMLProcInst: boolean;
+    sortAttrs: boolean;
+};
+export default class SVGO {
+    private readonly config;
+    constructor(config?: SvgoConfig);
+    optimize(svgData: string): Promise<string>;
+}

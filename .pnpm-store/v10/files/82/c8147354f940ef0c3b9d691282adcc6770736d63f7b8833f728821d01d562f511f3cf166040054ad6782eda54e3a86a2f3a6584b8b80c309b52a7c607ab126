@@ -1,0 +1,74 @@
+{
+  "name": "oxlint-plugin-react-doctor",
+  "version": "0.9.18",
+  "description": "React Doctor rules for oxlint.",
+  "keywords": [
+    "accessibility",
+    "linter",
+    "nextjs",
+    "oxc",
+    "oxlint",
+    "oxlint-plugin",
+    "performance",
+    "react",
+    "react-compiler",
+    "react-native",
+    "security",
+    "tanstack",
+    "typescript"
+  ],
+  "homepage": "https://github.com/millionco/react-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/millionco/react-doctor/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Aiden Bai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/millionco/react-doctor.git",
+    "directory": "packages/oxlint-plugin-react-doctor"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
+    }
+  },
+  "dependencies": {
+    "@shaderfrog/glsl-parser": "^7.0.1",
+    "@typescript-eslint/types": "^8.59.3",
+    "eslint-scope": "^9.1.2",
+    "eslint-visitor-keys": "^5.0.1",
+    "lightningcss": "^1.33.0",
+    "oxc-parser": "^0.148.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "oxfmt": "0.46.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.13.0"
+  },
+  "scripts": {
+    "dev": "vp pack --watch",
+    "build": "pnpm gen && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && cross-env NODE_ENV=production vp pack",
+    "gen": "tsx ./scripts/generate-rule-registry.mjs",
+    "gen:check": "pnpm gen && git diff --exit-code -- src/plugin/core-rule-registry-data.json src/plugin/rule-registry.ts src/plugin/security-scan-rule-registry.ts",
+    "gen:fixtures": "node ./scripts/extract-oxc-fixtures.mjs /tmp/oxc",
+    "gen:fixture-tests": "node ./scripts/generate-fixture-tests.mjs",
+    "gen:react-hooks-fixtures": "node ./scripts/extract-react-hooks-tests.mjs /tmp/react/packages/eslint-plugin-react-hooks/__tests__/ESLintRulesOfHooks-test.js src/plugin/rules/react-builtins/__upstream-fixtures__/rules-of-hooks.json && node ./scripts/extract-react-hooks-tests.mjs /tmp/react/packages/eslint-plugin-react-hooks/__tests__/ESLintRuleExhaustiveDeps-test.js src/plugin/rules/react-builtins/__upstream-fixtures__/exhaustive-deps.json",
+    "typecheck": "pnpm gen && tsc --noEmit",
+    "test": "pnpm gen && vp test run"
+  }
+}

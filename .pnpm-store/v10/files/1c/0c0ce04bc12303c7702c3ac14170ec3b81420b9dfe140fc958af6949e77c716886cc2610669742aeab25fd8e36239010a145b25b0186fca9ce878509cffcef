@@ -1,0 +1,14 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="91b8a1b5-8a36-548f-bf9c-6b7aa31c80bc")}catch(e){}}();
+import { t as inspectAction } from "./inspect-BJleAXM5.js";
+//#region src/cli/commands/design.ts
+const designAction = async (directory, flags) => inspectAction(directory, {
+	...flags,
+	design: true,
+	lint: flags.lint ?? true
+}, "design");
+//#endregion
+export { designAction };
+
+//# sourceMappingURL=design-BEEzwtu-.js.map
+//# debugId=91b8a1b5-8a36-548f-bf9c-6b7aa31c80bc

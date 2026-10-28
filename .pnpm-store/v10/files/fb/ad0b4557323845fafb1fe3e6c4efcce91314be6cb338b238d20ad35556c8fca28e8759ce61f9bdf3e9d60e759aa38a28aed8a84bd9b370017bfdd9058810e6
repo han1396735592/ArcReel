@@ -1,0 +1,9 @@
+//#region src/cli/utils/path-format.ts
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="59ab9154-f62b-51b5-ae76-b8a2b6114d4f")}catch(e){}}();
+const toForwardSlashes = (filePath) => filePath.replaceAll("\\", "/");
+//#endregion
+export { toForwardSlashes as t };
+
+//# sourceMappingURL=path-format-By20mo8A.js.map
+//# debugId=59ab9154-f62b-51b5-ae76-b8a2b6114d4f

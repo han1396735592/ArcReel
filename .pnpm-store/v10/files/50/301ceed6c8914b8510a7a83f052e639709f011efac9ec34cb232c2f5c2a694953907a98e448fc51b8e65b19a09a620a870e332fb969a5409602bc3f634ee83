@@ -1,0 +1,34 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="f1a9a10a-30cc-593b-92b9-ff43d1aad1c2")}catch(e){}}();
+import { u as METRIC } from "./constants-_b1h6lxa.js";
+import { Tn as runSync, t as recordCount } from "./record-metric-AbxY4m3i.js";
+import { o as isExpectedUserError } from "./telemetry-runtime-B0ira8s1.js";
+import { n as handleUserError, t as handleError } from "./handle-error-UbC9DMvZ.js";
+import { t as reportErrorToSentry } from "./report-error-D3uGbvdG.js";
+import { t as printBrandedHeader } from "./print-branded-header-D1eqThu5.js";
+import { n as runInstallReactDoctor } from "./install-react-doctor-WkrWOqc4.js";
+//#region src/cli/commands/install.ts
+const installAction = async (options, command) => {
+	recordCount(METRIC.cliInvoked, 1, { command: "install" });
+	runSync(printBrandedHeader);
+	try {
+		const parentOptions = command?.parent?.opts?.();
+		await runInstallReactDoctor({
+			yes: options.yes ?? parentOptions?.yes,
+			dryRun: options.dryRun,
+			agentHooks: options.agentHooks,
+			projectRoot: options.cwd ?? process.cwd()
+		});
+	} catch (error) {
+		if (isExpectedUserError(error)) {
+			handleUserError(error);
+			return;
+		}
+		handleError(error, { sentryEventId: await reportErrorToSentry(error) });
+	}
+};
+//#endregion
+export { installAction };
+
+//# sourceMappingURL=install-YHgG6Rzc.js.map
+//# debugId=f1a9a10a-30cc-593b-92b9-ff43d1aad1c2

@@ -1,0 +1,3170 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="99896995-ee6c-5a7e-b86c-567d397be2dc")}catch(e){}}();
+import { E as TRACKED_FILE_FLAGS_GIT_ARGUMENTS, Ft as HTML_FILE_PATTERN, Ht as MAINTAINABILITY_SOURCE_FILE_PATTERN, Jt as OXLINT_NODE_REQUIREMENT, K as resolveReactDoctorCacheDir, Nt as GIT_SHOW_MAX_BUFFER_BYTES, Rt as JSX_FILE_PATTERN, St as ENTERPRISE_CONTACT_URL, Wt as MILLISECONDS_PER_SECOND, _t as DIAGNOSTIC_CATEGORY_BUCKETS, c as HEAD_SHA_GIT_ARGUMENTS, dn as SHARE_BASE_URL, h as REPOSITORY_ROOT_GIT_ARGUMENTS, i as BASELINE_FILES_TEMP_DIR_PREFIX, k as WORKTREE_STATUS_GIT_ARGUMENTS, q as resolveScanConcurrency, u as METRIC, ut as CI_URL, v as SCAN_RESULT_CACHE_FILENAME } from "./constants-_b1h6lxa.js";
+import { t as isCacheGloballyDisabled } from "./is-cache-globally-disabled-BTTLvugj.js";
+import { $ as buildRuleSeverityControls, A as Files, An as mergeAll, B as PerFileLintCacheEnabled, Bt as listSourceFilesCooperative, C as ACTION_INPUT_ENVIRONMENT_VARIABLES, Cn as provideService, Dn as try_, Dt as getRuleMetadata, E as isCiOrCodingAgentEnvironment, En as sync, F as Linter, Ft as isReactDoctorError, G as SidecarLintCacheEnabled, Gt as mergeAndFilterDiagnostics, H as Project, Hn as isDirectory, I as Maintainability, Jt as resolveGithubActionsScoreMetadata, Kt as mergeReactDoctorConfigs, L as NodeResolver, Ln as ParentSpan, Lt as isScanComplete, M as InvocationCaches, Mn as succeed, Mt as highlighter, Nt as isPathInsideDirectory, O as Config, Ot as groupBy, P as LintPartialFailures, Q as buildRuleDocsUrl, Qt as runInspect, R as OxlintConcurrency, Rn as isMonorepoRoot, Sn as provideContext, T as isCiEnvironment, Tn as runSync, U as Reporter, Ut as mapWithConcurrency, V as Progress, Vt as listWorkspacePackages, W as Score, Wn as isFile, Wt as materializeSourceTree, X as atomicWriteJson, Xt as resolveScanTarget, Yt as resolveLintBatchOrdering, Zt as restoreLegacyThrow, _ as VERSION, an as warmDuplicateJsxWorker, at as collectSourceFilesByDirectory, b as isNonInteractiveEnvironment, bn as promise, cn as error, ct as countOptInProjectRuleSelections, d as isJsonModeActive, dn as warn, dt as createOxlintSpawnSlots, et as buildSkippedChecks, fn as Diagnostic, gn as gen, gt as filterSourceFiles, ht as filterPathsOutsideDirectories, j as Git, jt as hashFileContents, k as DIAGNOSTIC_DELTA_IDENTITY, kt as hasPublishedFixRecipe, l as getRunId, lt as createChangedLineMatcher, mn as decodeUnknownSync, mt as filterDiagnosticsForSurface, n as recordDistribution, nn as summarizeDiagnostics, nt as canonicalizeUserRuleKey, on as warmOxlintWorkerPool, ot as computeConfigFingerprint, pt as discoverSupportedSubprojects, q as SupplyChain, qt as remainingDeadlineBudgetMs, r as toSpanAttributes, rt as classifyFileContext, sn as Console, st as computeDiagnosticDelta, t as recordCount, tn as shouldUseMaintainabilityLayer, tt as calculateScore, un as log, ut as createInvocationCaches, v as makeNoopConsole, vn as map, w as detectRunnerOs, wn as runPromise, wt as getDiagnosticRuleIdentity, xn as provide, y as CliInputError, yn as orElseSucceed, yt as fingerprintDiagnosticEvidence, z as OxlintSpawnSlots, zn as yieldToEventLoop, zt as listSourceFiles } from "./record-metric-AbxY4m3i.js";
+import { t as getTelemetryContext } from "./telemetry-runtime-B0ira8s1.js";
+import { t as activeScanAbortRegistry } from "./active-scan-abort-registry-CCTgal0O.js";
+import { n as buildFooterLinkLines, t as buildSectionDivider } from "./build-section-divider-Dpv0R267.js";
+import { t as toForwardSlashes } from "./path-format-By20mo8A.js";
+import { t as typescriptBinding } from "./_react-doctor_require-typescript-DXQDYeWK.js";
+import { A as runGitAsync, C as isRecord, N as cliLogger, S as getPackageJsonPath, a as installReactDoctorScriptStep, c as spinner, j as runGitRaw, k as runGit, n as findNearestPackageDirectory, o as isSpinnerSilent, s as setSpinnerSilent } from "./install-doctor-script-BvrxLUFo.js";
+import { d as detectDefaultBranch, l as prompts, r as installReactDoctorWorkflow, u as isCommandAvailable } from "./install-github-workflow-BABtyGBR.js";
+import { a as isValidBlockingLevel, c as openWorkflowPullRequest, l as stageWorkflowFile, o as pickBlockingLevel } from "./resolve-scope-D27oa5iH.js";
+import { n as resetSentryRunState, r as withRunSpan, t as recordSentryProjectContext } from "./with-run-span-353qeuiD.js";
+import { h as detectAvailableAgents, t as reportWorkflowResult } from "./report-workflow-result-DQ2CaExl.js";
+import { createRequire } from "node:module";
+import * as fs$2 from "node:fs";
+import fs, { mkdtempSync, rmSync } from "node:fs";
+import * as path$1 from "node:path";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import crypto, { createHash, randomUUID } from "node:crypto";
+import * as fs$1 from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+//#region src/cli/utils/compute-source-filter-config-hash.ts
+const computeSourceFilterConfigHash = (input) => createHash("sha256").update(JSON.stringify({
+	textComponents: [...new Set(input.userConfig?.textComponents ?? [])].sort(),
+	rawTextWrapperComponents: [...new Set(input.userConfig?.rawTextWrapperComponents ?? [])].sort(),
+	respectInlineDisables: input.respectInlineDisables
+})).digest("hex");
+//#endregion
+//#region src/cli/utils/apply-observability.ts
+/**
+* Installs the tracing backend for the inspect program.
+*
+* Both the run root span and this program draw their tracer from the same
+* shared telemetry context, so the scan's spans (`runInspect`, every
+* `Service.method`) nest under the run span natively — no cross-backend
+* `ExternalSpan` stitching, and one exporter with one flush.
+*
+* The backend itself is chosen inside `layerObservability`: a user-configured
+* `REACT_DOCTOR_OTLP_*` endpoint wins over first-party Axiom, since Effect has a
+* single `Tracer` reference and someone who pointed React Doctor at their own
+* collector meant it.
+*
+* A pass-through when telemetry is off, leaving Effect's native in-memory
+* tracer — identical to the prior default behavior.
+*/
+const applyObservability = (program, rootSpan) => {
+	const telemetryContext = getTelemetryContext();
+	if (telemetryContext === null) return program;
+	const withBackend = program.pipe(provideContext(telemetryContext));
+	return rootSpan === void 0 ? withBackend : withBackend.pipe(provideService(ParentSpan, rootSpan));
+};
+//#endregion
+//#region src/cli/utils/build-runtime-layers.ts
+/**
+* Adapts the CLI's existing `spinner()` helper (an ora wrapper that
+* already handles non-interactive demotion + `setSpinnerSilent`) into
+* a `ProgressHandle` factory the orchestrator can drive via the
+* `Progress` service.
+*/
+const buildSpinnerProgressHandle = (text) => {
+	const oraHandle = spinner(text).start();
+	return {
+		update: (displayText) => sync(() => oraHandle.update(displayText)),
+		succeed: (displayText) => sync(() => oraHandle.succeed(displayText)),
+		fail: (displayText) => sync(() => oraHandle.fail(displayText)),
+		stop: () => sync(() => oraHandle.stop())
+	};
+};
+/**
+* Composes the production layer stack for `inspect()`'s
+* `Effect.runPromise(Effect.provide(...))` call. Lives outside
+* `inspect.ts` so the orchestrator stays focused on Effect program
+* construction and post-scan rendering — layer wiring is its own
+* concern with its own contract.
+*
+* Same service shape as `@react-doctor/api → diagnose()`'s
+* `buildDiagnoseLayer`, with the differences specific to the CLI path:
+*
+* - **Config**: when the caller passes `configOverride`, the
+*   already-loaded config is provided via `Config.layerOf` instead
+*   of re-loading from disk; `configSourceDirectory` is threaded
+*   through so `userConfig.plugins` resolution still anchors at
+*   the original config file location.
+* - **Score**: `layerHttp` for normal runs; `layerOf(null)` only when
+*   the caller passed `--no-score`. The orchestrator applies the
+*   `"score"` surface filter to the diagnostic set before calling
+*   `Score.compute`, so the in-band score matches what the public-API
+*   contract documents.
+* - **Progress**: `layerOra` wired to the CLI's existing ora-backed
+*   spinner helper for terminal feedback; `layerNoop` for silent /
+*   score-only / lint-skipped runs.
+*/
+const buildRuntimeLayers = (input) => {
+	const linterLayer = input.shouldSkipLint ? Linter.layerOf([]) : Linter.layerOxlint;
+	const maintainabilityLayer = shouldUseMaintainabilityLayer({
+		shouldRunDuplicateJsx: input.shouldRunDeadCode,
+		userConfig: input.userConfig
+	}) ? Maintainability.layerNode : Maintainability.layerOf([]);
+	const scoreLayer = input.shouldComputeScore ? Score.layerHttp : Score.layerOf(null);
+	const supplyChainLayer = input.shouldRunSupplyChain ? SupplyChain.layerNode : SupplyChain.layerOf([]);
+	const projectLayer = input.projectInfoOverride === void 0 ? Project.layerNode : Project.layerOf(input.projectInfoOverride);
+	const progressLayer = input.progressLayer ?? (input.shouldShowProgressSpinners ? Progress.layerOra(buildSpinnerProgressHandle) : Progress.layerNoop);
+	const reporterLayer = input.reporterLayer ?? Reporter.layerNoop;
+	const baseLayers = mergeAll(projectLayer, input.hasConfigOverride ? Config.layerOf({
+		config: input.userConfig,
+		resolvedDirectory: input.directory,
+		configSourceDirectory: input.configSourceDirectory
+	}) : Config.layerNode, Files.layerNode, Git.layerNode, linterLayer, LintPartialFailures.layerLive, maintainabilityLayer, progressLayer, reporterLayer, scoreLayer, supplyChainLayer);
+	const layersWithConcurrency = input.oxlintConcurrency === void 0 ? baseLayers : mergeAll(baseLayers, succeed(OxlintConcurrency, input.oxlintConcurrency));
+	const layersWithSpawnSlots = input.oxlintSpawnSlots === void 0 ? layersWithConcurrency : mergeAll(layersWithConcurrency, succeed(OxlintSpawnSlots, input.oxlintSpawnSlots));
+	return input.invocationCaches === void 0 ? layersWithSpawnSlots : mergeAll(layersWithSpawnSlots, succeed(InvocationCaches, input.invocationCaches));
+};
+//#endregion
+//#region src/cli/utils/diagnostic-grouping.ts
+const buildRulePriorityMap = (scores) => {
+	const rulePriority = /* @__PURE__ */ new Map();
+	for (const score of scores) {
+		if (!score?.rules) continue;
+		for (const [ruleKey, info] of Object.entries(score.rules)) if (typeof info.priority === "number") rulePriority.set(ruleKey, info.priority);
+	}
+	return rulePriority;
+};
+const compareByRulePriority = (ruleKeyA, ruleKeyB, rulePriority) => {
+	const priorityA = rulePriority?.get(ruleKeyA);
+	const priorityB = rulePriority?.get(ruleKeyB);
+	if (priorityA === void 0 && priorityB === void 0) return 0;
+	if (priorityA === void 0) return 1;
+	if (priorityB === void 0) return -1;
+	return priorityB - priorityA;
+};
+const sortRuleGroupsByImportance = (diagnosticGroups, rulePriority) => diagnosticGroups.toSorted(([ruleKeyA], [ruleKeyB]) => compareByRulePriority(ruleKeyA, ruleKeyB, rulePriority));
+const buildSortedRuleGroups = (diagnostics, rulePriority) => sortRuleGroupsByImportance([...groupBy([...diagnostics], (diagnostic) => `${diagnostic.plugin}/${diagnostic.rule}`)], rulePriority);
+const getSharedFixSiteCount = (diagnostics) => {
+	if (diagnostics.length < 2) return 0;
+	const firstFixGroupId = diagnostics[0]?.fixGroupId;
+	if (!firstFixGroupId) return 0;
+	return diagnostics.every((diagnostic) => diagnostic.fixGroupId === firstFixGroupId) ? diagnostics.length : 0;
+};
+const FIX_RECIPE_DIRECTIVE_LABEL = "Curl with no cache & follow the canonical fix and false positive check recipe before fixing";
+const formatFixRecipeLine = (diagnostic) => hasPublishedFixRecipe(diagnostic) ? `${FIX_RECIPE_DIRECTIVE_LABEL}: ${buildRuleDocsUrl(diagnostic.plugin, diagnostic.rule)}` : null;
+const formatLearnMoreLine = (diagnostic) => hasPublishedFixRecipe(diagnostic) ? `Learn more: ${buildRuleDocsUrl(diagnostic.plugin, diagnostic.rule)}` : null;
+const buildRuleBlastRadii = (diagnostics) => buildSortedRuleGroups(diagnostics).map(([ruleKey, ruleDiagnostics]) => ({
+	ruleKey,
+	title: ruleDiagnostics[0].title ?? ruleKey,
+	siteCount: ruleDiagnostics.length,
+	fileCount: new Set(ruleDiagnostics.map((diagnostic) => diagnostic.filePath)).size
+})).toSorted((left, right) => right.fileCount - left.fileCount);
+const findMigrationScaleBuckets = (diagnostics) => buildRuleBlastRadii(diagnostics).filter((bucket) => bucket.fileCount >= 40);
+//#endregion
+//#region src/cli/utils/has-lint-hard-failure.ts
+const hasLintHardFailure = (result) => result.skippedChecks.includes("lint");
+//#endregion
+//#region src/cli/utils/is-inspect-result-complete.ts
+const isInspectResultComplete = (result) => isScanComplete({
+	analyzedFileCount: result.analyzedFiles?.length,
+	scannedFileCount: result.scannedFileCount,
+	skippedCheckCount: result.skippedChecks.length,
+	skippedCheckReasonCount: Object.keys(result.skippedCheckReasons ?? {}).length
+});
+//#endregion
+//#region src/cli/utils/record-scan-metrics.ts
+/**
+* Aggregates diagnostics into per-`(rule, severity)` firing counts, reusing the
+* canonical `getDiagnosticRuleIdentity` so the `<plugin>/<rule>` key and
+* category match every other rule-keyed surface. Pure and exported so the
+* bucketing is unit-testable without an active Sentry client (the emit helpers
+* no-op under tests). Grouping the emitted `rule.fired` counter by `category`
+* or `severity` in Sentry reproduces a coarser breakdown.
+*/
+const summarizeRuleFirings = (diagnostics) => {
+	const firings = /* @__PURE__ */ new Map();
+	for (const diagnostic of diagnostics) {
+		const { ruleKey, category } = getDiagnosticRuleIdentity(diagnostic);
+		const firingKey = `${ruleKey}\u0000${diagnostic.severity}`;
+		const existing = firings.get(firingKey);
+		firings.set(firingKey, existing ? {
+			...existing,
+			count: existing.count + 1
+		} : {
+			rule: ruleKey,
+			plugin: diagnostic.plugin,
+			category,
+			severity: diagnostic.severity,
+			count: 1
+		});
+	}
+	return [...firings.values()];
+};
+/**
+* Enumerates the rules a config turns off entirely — `rules: { x: "off" }`
+* entries and the `ignore.rules` list — with keys canonicalized so every
+* spelling of one rule (legacy alias, bare short id) groups under one
+* `rule` attribute in Sentry. Deliberately scan-independent: an `"off"`
+* lint rule is removed from the generated oxlint config and never fires,
+* so the per-diagnostic `rule.suppressed` counter can't see it.
+*/
+const summarizeDisabledRules = (userConfig) => {
+	const disabledRules = /* @__PURE__ */ new Map();
+	const record = (configuredRuleKey, source) => {
+		const rule = canonicalizeUserRuleKey(configuredRuleKey);
+		disabledRules.set(`${rule}\u0000${source}`, {
+			rule,
+			source
+		});
+	};
+	for (const [ruleKey, severity] of Object.entries(userConfig?.rules ?? {})) if (severity === "off") record(ruleKey, "rules");
+	if (Array.isArray(userConfig?.ignore?.rules)) {
+		for (const ruleKey of userConfig.ignore.rules) if (typeof ruleKey === "string") record(ruleKey, "ignore");
+	}
+	return [...disabledRules.values()];
+};
+/**
+* Emits the per-scan engineering + product counters/distributions for one
+* `inspect()` run (fires once per project in a workspace scan). Every emission
+* is a no-op unless Sentry is live, and the shared run/project attributes ride
+* along from the global scope, so call sites only pass scan-specific dimensions.
+*/
+const recordScanMetrics = (input) => {
+	const { result } = input;
+	const hasSkippedChecks = result.skippedChecks.length > 0;
+	recordCount(METRIC.scanCompleted, 1, {
+		mode: input.mode,
+		lint: input.lint,
+		maintainability: input.deadCode,
+		parallel: input.parallel,
+		scoreOnly: input.scoreOnly,
+		didLintFail: input.didLintFail,
+		didDeadCodeFail: input.didDeadCodeFail,
+		hasSkippedChecks
+	});
+	recordDistribution(METRIC.scanDuration, result.elapsedMilliseconds, {
+		unit: "millisecond",
+		attributes: {
+			mode: input.mode,
+			parallel: input.parallel,
+			scoreOnly: input.scoreOnly
+		}
+	});
+	if (result.scanElapsedMilliseconds !== void 0) recordDistribution(METRIC.scanPhaseDuration, result.scanElapsedMilliseconds, {
+		unit: "millisecond",
+		attributes: { mode: input.mode }
+	});
+	if (result.scannedFileCount !== void 0) recordDistribution(METRIC.scanFiles, result.scannedFileCount, { attributes: { mode: input.mode } });
+	if (input.workerCount !== void 0) recordDistribution(METRIC.oxlintWorkers, input.workerCount, { attributes: { mode: input.mode } });
+	for (const firing of summarizeRuleFirings(result.diagnostics)) recordCount(METRIC.ruleFired, firing.count, {
+		rule: firing.rule,
+		plugin: firing.plugin,
+		category: firing.category,
+		severity: firing.severity
+	});
+	for (const disabled of summarizeDisabledRules(input.userConfig)) recordCount(METRIC.ruleDisabled, 1, {
+		rule: disabled.rule,
+		source: disabled.source
+	});
+	for (const suppression of input.suppressedRuleCounts) recordCount(METRIC.ruleSuppressed, suppression.count, {
+		rule: suppression.rule,
+		source: suppression.source
+	});
+	if (result.diagnostics.length === 0 && !hasSkippedChecks) recordCount(METRIC.scanClean, 1, { mode: input.mode });
+	if (result.score) recordDistribution(METRIC.scanScore, result.score.score, { attributes: { mode: input.mode } });
+	else if (!input.noScore && !input.didLintFail && !input.didDeadCodeFail) recordCount(METRIC.scoreUnavailable, 1, { mode: input.mode });
+	if (input.baselineDegraded) recordCount(METRIC.baselineDegraded, 1);
+	if (input.didLintFail) recordCount(METRIC.lintFailed, 1, { reasonKind: input.lintFailureReasonKind });
+	if (input.didDeadCodeFail) recordCount(METRIC.maintainabilityFailed, 1);
+	for (const check of result.skippedChecks) recordCount(METRIC.scanCheckSkipped, 1, {
+		check,
+		reason: result.skippedCheckReasons?.[check] ?? null
+	});
+};
+//#endregion
+//#region src/cli/utils/resolve-score-unavailable-reason.ts
+const resolveScoreUnavailableReason = (input) => {
+	if (input.isScoreDisabled) return "disabled";
+	return input.isAnalysisIncomplete ? "analysis-incomplete" : "api-unavailable";
+};
+//#endregion
+//#region src/cli/utils/should-block-ci.ts
+const shouldBlockCi = (diagnostics, blockingLevel) => {
+	if (blockingLevel === "none") return false;
+	if (blockingLevel === "warning") return diagnostics.length > 0;
+	return diagnostics.some((diagnostic) => diagnostic.severity === "error");
+};
+//#endregion
+//#region src/cli/utils/to-category-key.ts
+/**
+* Lowercase, key-safe form of a rule category for the `diag.category.*`
+* telemetry attribute namespace (categories carry spaces / capitals, e.g.
+* "Performance" → `performance`, "Dead Code" → `dead_code`).
+*/
+const toCategoryKey = (category) => category.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+//#endregion
+//#region src/cli/utils/with-namespace.ts
+/**
+* Prefixes every key in a flat attribute group with `namespace.`, so a logical
+* group (scan config, diagnostics rollup, score, …) carries one dotted
+* namespace applied in a single place rather than hand-spelled into each key —
+* which is how the wide event drifted into a flat, half-namespaced soup. The
+* dotted prefix is what makes the attributes tree up in Sentry's attribute
+* browser and stay group-/filter-/aggregate-able in the Spans dataset.
+*
+* Value types are preserved verbatim (numbers stay numbers so Sentry infers a
+* numeric attribute and `p75(...)`/`avg(...)` work; `null`/`undefined` are kept
+* so `toSpanAttributes` can drop absent signals rather than coerce them).
+*/
+const withNamespace = (namespace, attributes) => {
+	const namespaced = {};
+	for (const [key, value] of Object.entries(attributes)) namespaced[`${namespace}.${key}`] = value;
+	return namespaced;
+};
+//#endregion
+//#region src/cli/utils/build-run-event.ts
+const readEnvBoolean = (name) => {
+	const value = process.env[name];
+	if (value === void 0) return null;
+	return value.toLowerCase() === "true" || value === "1";
+};
+const ratioOf = (numerator, denominator) => denominator != null && denominator > 0 ? (numerator ?? 0) / denominator : null;
+/**
+* One queryable cache temperature per scan, derived from the whole stack:
+*
+*   - `"turbo"`    — whole-repo scan-result replay (the explicit
+*                    `wholeRepoCacheHit` flag from the CLI's cachedPayload
+*                    branch; no scan work ran).
+*   - `"warm"`     — any incremental reuse: per-file lint hits, sidecar
+*                    replays.
+*   - `"disabled"` — zero reuse because the global `REACT_DOCTOR_NO_CACHE`
+*                    off-switch is on. Granular per-cache opt-outs
+*                    (`REACT_DOCTOR_NO_FILE_CACHE`, …) still read warm/cold,
+*                    since the other subsystems stay live.
+*   - `"cold"`     — caches on, zero reuse (first scan / everything changed).
+*
+* `cache.warmth` is the headline reuse magnitude in [0, 1]: the plain mean of
+* the subsystem reuse fractions known this run (lint hit ratio, sidecar
+* replay ratio), skipping subsystems that never consulted a
+* cache; `1` on turbo, dropped when nothing consulted any cache. Deliberately
+* unweighted — the per-subsystem dims stay the precise signal; warmth is the
+* p50/p90-able summary. Emitted only on the success path.
+*/
+const buildCacheAttributes = (input) => {
+	if (input.result === void 0) return {};
+	if (input.wholeRepoCacheHit) return withNamespace("cache", {
+		wholeRepoHit: true,
+		temperature: "turbo",
+		warmth: 1
+	});
+	const result = input.result;
+	const subsystemReuseRatios = [ratioOf(result.lintCacheHitFileCount, result.lintCacheTotalFileCount), ratioOf(result.lintSidecarReplayedFileCount, result.lintSidecarTotalFileCount)];
+	let knownSubsystemCount = 0;
+	let reuseRatioSum = 0;
+	for (const reuseRatio of subsystemReuseRatios) {
+		if (reuseRatio === null) continue;
+		knownSubsystemCount += 1;
+		reuseRatioSum += reuseRatio;
+	}
+	const warmth = knownSubsystemCount > 0 ? reuseRatioSum / knownSubsystemCount : null;
+	const temperature = warmth !== null && warmth > 0 ? "warm" : isCacheGloballyDisabled() ? "disabled" : "cold";
+	return withNamespace("cache", {
+		wholeRepoHit: input.wholeRepoCacheHit,
+		temperature,
+		warmth
+	});
+};
+const resolveVersionPin = (versionInput) => {
+	if (versionInput === void 0 || versionInput.trim() === "") return null;
+	if (versionInput === "latest") return "latest";
+	if (/^(\.\.?\/|\/)/.test(versionInput)) return "local";
+	return "pinned";
+};
+const resolveTelemetryBlocking = (userConfig) => {
+	const fromAction = process.env[ACTION_INPUT_ENVIRONMENT_VARIABLES.blocking];
+	if (fromAction !== void 0 && isValidBlockingLevel(fromAction)) return fromAction;
+	return userConfig?.blocking ?? userConfig?.failOn ?? "error";
+};
+const buildOutcomeAttributes = (input) => {
+	if (input.result === void 0) {
+		const error = input.error;
+		const known = isReactDoctorError(error);
+		return withNamespace("outcome", {
+			status: "error",
+			exitCode: 1,
+			complete: false,
+			knownError: known,
+			errorTag: known ? error.reason._tag : error instanceof Error ? error.name : null
+		});
+	}
+	const result = input.result;
+	const summary = summarizeDiagnostics(result.diagnostics);
+	const blockingLevel = resolveTelemetryBlocking(input.userConfig);
+	const gateDiagnostics = filterDiagnosticsForSurface(result.diagnostics, "ciFailure", input.userConfig);
+	const gateDiagnosticSet = new Set(gateDiagnostics);
+	const complete = isInspectResultComplete(result);
+	const didLintHardFail = hasLintHardFailure(result);
+	const failsOnHardFailure = didLintHardFail && blockingLevel !== "none";
+	const wouldBlock = !input.scoreOnly && !input.gateExempt && shouldBlockCi(gateDiagnostics, blockingLevel);
+	const isClean = result.diagnostics.length === 0 && complete;
+	const outcome = didLintHardFail ? "error" : wouldBlock ? "blocked" : isClean ? "clean" : "ok";
+	const firings = summarizeRuleFirings(result.diagnostics);
+	const countByRule = /* @__PURE__ */ new Map();
+	const countByCategory = /* @__PURE__ */ new Map();
+	for (const firing of firings) {
+		countByRule.set(firing.rule, (countByRule.get(firing.rule) ?? 0) + firing.count);
+		countByCategory.set(firing.category, (countByCategory.get(firing.category) ?? 0) + firing.count);
+	}
+	let topRule = null;
+	let topRuleCount = 0;
+	for (const [rule, count] of countByRule) if (count > topRuleCount) {
+		topRule = rule;
+		topRuleCount = count;
+	}
+	const largestRuleBucket = buildRuleBlastRadii(result.diagnostics)[0] ?? null;
+	let diagnosticsInTestFiles = 0;
+	let diagnosticsInStoryFiles = 0;
+	let nonProductionGateExcluded = 0;
+	const diagnosticSiteCounts = /* @__PURE__ */ new Map();
+	const findingsPerFixGroup = /* @__PURE__ */ new Map();
+	for (const diagnostic of result.diagnostics) {
+		if (diagnostic.fileContext === "test") diagnosticsInTestFiles += 1;
+		if (diagnostic.fileContext === "story") diagnosticsInStoryFiles += 1;
+		if (diagnostic.fileContext !== void 0 && !gateDiagnosticSet.has(diagnostic)) nonProductionGateExcluded += 1;
+		const diagnosticSite = JSON.stringify([
+			diagnostic.filePath,
+			diagnostic.line,
+			diagnostic.column,
+			diagnostic.plugin,
+			diagnostic.rule
+		]);
+		diagnosticSiteCounts.set(diagnosticSite, (diagnosticSiteCounts.get(diagnosticSite) ?? 0) + 1);
+		if (diagnostic.fixGroupId) findingsPerFixGroup.set(diagnostic.fixGroupId, (findingsPerFixGroup.get(diagnostic.fixGroupId) ?? 0) + 1);
+	}
+	let fixGroupedFindings = 0;
+	for (const count of findingsPerFixGroup.values()) fixGroupedFindings += count;
+	let sameSiteOccurrences = 0;
+	for (const count of diagnosticSiteCounts.values()) sameSiteOccurrences += Math.max(0, count - 1);
+	const categoryRollup = {};
+	for (const [category, count] of countByCategory) categoryRollup[`category.${toCategoryKey(category)}`] = count;
+	const suppressionRollup = {};
+	if (input.suppressedRuleCounts) {
+		const countBySource = {
+			config: 0,
+			override: 0,
+			inline: 0,
+			"foreign-inline": 0
+		};
+		for (const suppression of input.suppressedRuleCounts) countBySource[suppression.source] += suppression.count;
+		suppressionRollup.suppressed = countBySource.config + countBySource.override + countBySource.inline + countBySource["foreign-inline"];
+		suppressionRollup.suppressedConfig = countBySource.config;
+		suppressionRollup.suppressedOverride = countBySource.override;
+		suppressionRollup.suppressedInline = countBySource.inline;
+		suppressionRollup.suppressedForeignInline = countBySource["foreign-inline"];
+	}
+	const attributes = {
+		...withNamespace("outcome", {
+			status: outcome,
+			exitCode: failsOnHardFailure || wouldBlock ? 1 : 0,
+			wouldBlock,
+			blocking: blockingLevel,
+			clean: isClean,
+			complete,
+			skippedChecks: result.skippedChecks.length
+		}),
+		...withNamespace("diag", {
+			total: summary.totalDiagnosticCount,
+			errors: summary.errorCount,
+			warnings: summary.warningCount,
+			affectedFiles: summary.affectedFileCount,
+			inTestFiles: diagnosticsInTestFiles,
+			inStoryFiles: diagnosticsInStoryFiles,
+			nonProductionGateExcluded,
+			distinctRules: countByRule.size,
+			topRule,
+			sameSiteOccurrences,
+			fixGroups: findingsPerFixGroup.size,
+			fixGroupedFindings,
+			...categoryRollup,
+			...suppressionRollup
+		}),
+		...withNamespace("score", {
+			value: result.score ? result.score.score : null,
+			label: result.score ? result.score.label : null,
+			available: result.score !== null,
+			unavailableReason: result.score === null ? resolveScoreUnavailableReason({
+				isScoreDisabled: input.noScore,
+				isAnalysisIncomplete: input.didLintFail === true || input.didDeadCodeFail === true
+			}) : null
+		}),
+		...withNamespace("lint", {
+			failed: input.didLintFail,
+			failureReasonKind: input.lintFailureReasonKind,
+			partialFailureCount: input.lintPartialFailureCount,
+			droppedFileCount: input.lintDroppedFileCount,
+			deadlineSkippedFileCount: input.lintDeadlineSkippedFileCount,
+			cacheHitFiles: result.lintCacheHitFileCount,
+			cacheTotalFiles: result.lintCacheTotalFileCount,
+			cacheHitRatio: ratioOf(result.lintCacheHitFileCount, result.lintCacheTotalFileCount),
+			sidecarReplayedFiles: result.lintSidecarReplayedFileCount,
+			sidecarTotalFiles: result.lintSidecarTotalFileCount,
+			sidecarReplayRatio: ratioOf(result.lintSidecarReplayedFileCount, result.lintSidecarTotalFileCount)
+		}),
+		...withNamespace("maintainability", { failed: input.didDeadCodeFail }),
+		...withNamespace("supplyChain", { overlapTimedOut: input.supplyChainOverlapTimedOut }),
+		...withNamespace("securityScan", { failed: input.securityScanFailed }),
+		...withNamespace("timing", {
+			elapsedMs: result.elapsedMilliseconds,
+			scanMs: result.scanElapsedMilliseconds
+		}),
+		...withNamespace("migration", {
+			largestRuleBucketFiles: largestRuleBucket ? largestRuleBucket.fileCount : null,
+			largestRuleBucketSites: largestRuleBucket ? largestRuleBucket.siteCount : null,
+			largestRuleBucketRule: largestRuleBucket ? largestRuleBucket.ruleKey : null
+		})
+	};
+	if (result.baselineDelta) Object.assign(attributes, withNamespace("baseline", {
+		new: summary.totalDiagnosticCount,
+		fixed: result.baselineDelta.fixedCount,
+		baseTotal: result.baselineDelta.baseTotalCount,
+		crossFileMatches: result.baselineDelta.crossFileMatchCount,
+		source: result.baselineDelta.source ?? "base",
+		ruleCountMatches: result.baselineDelta.ruleCountMatchCount ?? 0,
+		degraded: false
+	}));
+	else if (input.gateExempt) attributes["baseline.degraded"] = true;
+	return attributes;
+};
+const buildActionAttributes = () => {
+	const { githubActorAssociation } = resolveGithubActionsScoreMetadata();
+	return withNamespace("action", {
+		actorAssociation: githubActorAssociation,
+		runnerOs: detectRunnerOs(),
+		comment: readEnvBoolean(ACTION_INPUT_ENVIRONMENT_VARIABLES.comment),
+		commentOnClean: readEnvBoolean(ACTION_INPUT_ENVIRONMENT_VARIABLES.commentOnClean),
+		reviewComments: readEnvBoolean(ACTION_INPUT_ENVIRONMENT_VARIABLES.reviewComments),
+		versionPin: resolveVersionPin(process.env[ACTION_INPUT_ENVIRONMENT_VARIABLES.version])
+	});
+};
+const buildScanAttributes = (input) => {
+	const ruleOverrides = input.userConfig?.rules ?? {};
+	const ruleKeys = Object.keys(ruleOverrides);
+	return withNamespace("scan", {
+		mode: input.mode,
+		scope: input.scope,
+		parallel: input.parallel,
+		workerCount: input.workerCount,
+		maxDurationMs: input.maxDurationMs,
+		lint: input.lint,
+		maintainability: input.deadCode,
+		supplyChain: input.supplyChain,
+		scoreOnly: input.scoreOnly,
+		noScore: input.noScore,
+		respectInlineDisables: input.respectInlineDisables,
+		showWarnings: input.showWarnings,
+		usedOutputDir: input.usedOutputDir,
+		ignoredTagCount: input.ignoredTagCount,
+		hasCustomConfig: input.hasCustomConfig,
+		customRulesOnly: input.userConfig?.customRulesOnly ?? false,
+		rulesConfigured: ruleKeys.length,
+		rulesDisabled: ruleKeys.filter((key) => ruleOverrides[key] === "off").length,
+		projectAnalysisRuleCount: countOptInProjectRuleSelections(buildRuleSeverityControls(input.userConfig)),
+		fileCount: input.result?.scannedFileCount,
+		nonJsxFileCount: input.result?.analyzedFiles?.filter((filePath) => !JSX_FILE_PATTERN.test(filePath)).length,
+		htmlFileCount: input.result?.analyzedFiles?.filter((filePath) => HTML_FILE_PATTERN.test(filePath)).length,
+		multilineDiagnosticCount: input.result?.diagnostics.filter((diagnostic) => (diagnostic.endLine ?? diagnostic.line) > diagnostic.line).length
+	});
+};
+/**
+* Projects a scan into the namespaced attribute set for its root span — the
+* canonical per-scan "wide event". Every attribute carries a dotted namespace
+* that groups it by concept (`scan.*` config, `action.*` CI knobs, `outcome.*`
+* verdict, `diag.*` findings, `score.*`, `lint.*`, `maintainability.*`, `cache.*`,
+* `supplyChain.*`, `timing.*`, `migration.*`, `baseline.*`) so the attributes
+* tree up in Sentry's attribute browser and stay filter-/group-/aggregate-able
+* in the Spans dataset. Pure and exported so the projection (outcome
+* precedence, rule/category rollups, CI knobs, config shape) is unit-testable
+* without a live Sentry client. `null`/`undefined` values are dropped so absent
+* signals never become misleading `"null"`/`"undefined"` attributes. The run +
+* project base context (version, command, ci/provider, framework, …) is already
+* on the span from `withSentryRunSpan` / `recordSentryProjectContext`, so this
+* adds only what those don't carry.
+*/
+const buildRunEventAttributes = (input) => toSpanAttributes({
+	...buildScanAttributes(input),
+	...buildActionAttributes(),
+	...buildOutcomeAttributes(input),
+	...buildCacheAttributes(input)
+});
+/**
+* Stamps the wide-event attributes onto the run's root span. A guarded no-op
+* when tracing is off (no `rootSpan`) and swallow-on-throw, so telemetry can
+* never break the run.
+*/
+const recordRunEvent = (rootSpan, input) => {
+	if (!rootSpan) return;
+	try {
+		for (const [key, value] of Object.entries(buildRunEventAttributes(input))) rootSpan.attribute(key, value);
+	} catch {}
+};
+//#endregion
+//#region src/cli/utils/filter-diagnostics-by-changed-lines.ts
+const filterDiagnosticsByChangedLines = (input) => {
+	return input.diagnostics.filter(createChangedLineMatcher(input));
+};
+//#endregion
+//#region src/cli/utils/resolve-invocation-oxlint-concurrency.ts
+/**
+* The invocation-wide oxlint worker count: an explicit `--concurrency` pin
+* when given, else the env-seeded / auto-budgeted `OxlintConcurrency`, clamped
+* to the spawn ceiling. Every project of a workspace scan shares this one
+* pool, so it also sizes how many projects may be in flight at once.
+*/
+const resolveInvocationOxlintConcurrency = (requestedConcurrency) => resolveScanConcurrency(requestedConcurrency ?? runSync(OxlintConcurrency));
+//#endregion
+//#region src/cli/utils/resolve-oxlint-node.ts
+const consoleWarn = (message) => warn(highlighter.warn(message));
+const consoleBreak = log("");
+const consoleDim = (message) => log(highlighter.gray(message));
+const consoleSuccess = (message) => log(highlighter.success(message));
+const promptShouldInstallNode = () => promise(async () => {
+	const { shouldInstallNode } = await prompts({
+		type: "confirm",
+		name: "shouldInstallNode",
+		message: `Install Node 24 via nvm to enable lint checks?`,
+		initial: true
+	});
+	return Boolean(shouldInstallNode);
+});
+const resolveOxlintNodeEffect = (isLintEnabled, isQuiet) => gen(function* () {
+	if (!isLintEnabled) return null;
+	const resolver = yield* NodeResolver;
+	const initial = yield* resolver.resolve();
+	if (initial !== null) {
+		if (!initial.isCurrentNode && !isQuiet) {
+			yield* consoleWarn(`Node ${process.version} is unsupported by oxlint. Using Node ${initial.version} from nvm.`);
+			yield* consoleBreak;
+		}
+		return initial.binaryPath;
+	}
+	if (isQuiet) return null;
+	yield* consoleWarn(`Node ${process.version} is not compatible with oxlint (requires ${OXLINT_NODE_REQUIREMENT}). Lint checks will be skipped.`);
+	const isNvmInstalled = yield* resolver.isNvmInstalled();
+	if (isNvmInstalled && process.stdin.isTTY) {
+		if (yield* promptShouldInstallNode()) {
+			yield* consoleBreak;
+			const fresh = (yield* resolver.installViaNvm()) ? yield* resolver.resolve() : null;
+			if (fresh) {
+				yield* consoleBreak;
+				yield* consoleSuccess(`Node ${fresh.version} installed. Using it for lint checks.`);
+				yield* consoleBreak;
+				return fresh.binaryPath;
+			}
+			yield* consoleBreak;
+			yield* consoleWarn("Failed to install Node via nvm. Skipping lint checks.");
+			yield* consoleBreak;
+			return null;
+		}
+	} else if (isNvmInstalled) yield* consoleDim(`  Run: nvm install 24`);
+	else yield* consoleDim(`  Install nvm (https://github.com/nvm-sh/nvm) and run: nvm install 24`);
+	yield* consoleBreak;
+	return null;
+});
+const resolveOxlintNode = (isLintEnabled, isQuiet) => runPromise(resolveOxlintNodeEffect(isLintEnabled, isQuiet).pipe(provide(NodeResolver.layerNode)));
+//#endregion
+//#region src/cli/utils/resolve-cli-categories.ts
+const categoryByLowercase = new Map(DIAGNOSTIC_CATEGORY_BUCKETS.map((category) => [category.toLowerCase(), category]));
+const knownCategoryList = DIAGNOSTIC_CATEGORY_BUCKETS.join(", ");
+const splitCategoryFlagValue = (value) => value.split(",").map((category) => category.trim()).filter((category) => category.length > 0);
+const resolveCliCategories = (categoryFlag) => {
+	const rawCategoryValues = categoryFlag === void 0 ? [] : Array.isArray(categoryFlag) ? categoryFlag : [categoryFlag];
+	const resolvedCategories = [];
+	const seenCategories = /* @__PURE__ */ new Set();
+	for (const rawCategoryValue of rawCategoryValues) for (const categoryQuery of splitCategoryFlagValue(rawCategoryValue)) {
+		const matchedCategory = categoryByLowercase.get(categoryQuery.toLowerCase());
+		if (matchedCategory === void 0) throw new CliInputError(`Unknown category "${categoryQuery}". Expected one of: ${knownCategoryList}.`);
+		if (!seenCategories.has(matchedCategory)) {
+			seenCategories.add(matchedCategory);
+			resolvedCategories.push(matchedCategory);
+		}
+	}
+	if (rawCategoryValues.length > 0 && resolvedCategories.length === 0) throw new CliInputError(`--category requires one of: ${knownCategoryList}.`);
+	return resolvedCategories.length > 0 ? resolvedCategories : void 0;
+};
+//#endregion
+//#region src/cli/utils/resolve-inspect-options.ts
+const resolveIgnoredTags = (userConfig, includedTags) => {
+	const ignoredTags = new Set(userConfig?.ignore?.tags ?? []);
+	for (const includedTag of includedTags) ignoredTags.delete(includedTag);
+	return ignoredTags;
+};
+const resolveInspectOptions = (inputOptions, userConfig) => {
+	const includedTags = inputOptions.includedTags ?? /* @__PURE__ */ new Set();
+	const hasIncludedTags = includedTags.size > 0;
+	return {
+		lint: inputOptions.lint ?? userConfig?.lint ?? true,
+		deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
+		supplyChain: inputOptions.supplyChain ?? userConfig?.supplyChain?.enabled ?? true,
+		verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
+		outputDirectory: inputOptions.outputDirectory || null,
+		scoreOnly: inputOptions.scoreOnly ?? false,
+		noScore: inputOptions.noScore ?? userConfig?.noScore ?? false,
+		isCi: inputOptions.isCi ?? false,
+		isCiOrCodingAgentEnvironment: isCiOrCodingAgentEnvironment(),
+		isNonInteractiveEnvironment: isNonInteractiveEnvironment(),
+		silent: inputOptions.silent ?? false,
+		includePaths: inputOptions.includePaths ?? [],
+		customRulesOnly: hasIncludedTags ? false : userConfig?.customRulesOnly ?? false,
+		share: userConfig?.share ?? true,
+		respectInlineDisables: inputOptions.respectInlineDisables ?? userConfig?.respectInlineDisables ?? true,
+		warnings: inputOptions.warnings ?? userConfig?.warnings ?? true,
+		categoryFilters: new Set(resolveCliCategories(inputOptions.categoryFilters) ?? []),
+		adoptExistingLintConfig: hasIncludedTags ? false : userConfig?.adoptExistingLintConfig ?? true,
+		ignoredTags: resolveIgnoredTags(userConfig, includedTags),
+		includedTags,
+		includeTagDefaults: inputOptions.includeTagDefaults ?? false,
+		scoreDisabledMessage: inputOptions.scoreDisabledMessage,
+		outputSurface: inputOptions.outputSurface ?? "cli",
+		suppressRendering: (inputOptions.suppressRendering ?? false) || inputOptions.uiLayers != null,
+		uiLayers: inputOptions.uiLayers ?? null,
+		concurrentScan: inputOptions.concurrentScan ?? false,
+		concurrency: inputOptions.concurrency,
+		maxDurationMs: inputOptions.maxDurationMs ?? null,
+		baselineReport: inputOptions.baselineReport ?? null,
+		baseline: inputOptions.baseline ?? null,
+		contextual: inputOptions.contextual ?? false,
+		changedLineRanges: inputOptions.changedLineRanges ?? null,
+		supplyChainManifestChanged: inputOptions.supplyChainManifestChanged ?? false,
+		excludedProjectDirectories: inputOptions.excludedProjectDirectories ?? [],
+		retainExcludedProjectDeadCodeDiagnostics: inputOptions.retainExcludedProjectDeadCodeDiagnostics ?? false,
+		precomputedSourceFileCount: inputOptions.precomputedSourceFileCount,
+		precomputedSourceFiles: inputOptions.precomputedSourceFiles
+	};
+};
+//#endregion
+//#region src/cli/utils/sum-file-counts-matching.ts
+const sumFileCountsMatching = (messages, countPattern) => messages.reduce((total, message) => {
+	const match = countPattern.exec(message);
+	return match ? total + Number(match[1]) : total;
+}, 0);
+//#endregion
+//#region src/cli/utils/count-deadline-skipped-files.ts
+const DEADLINE_SKIPPED_MESSAGE_PATTERN = /^(\d+) file\(s\) skipped — max scan duration reached/;
+const countDeadlineSkippedFiles = (lintPartialFailures) => sumFileCountsMatching(lintPartialFailures, DEADLINE_SKIPPED_MESSAGE_PATTERN);
+//#endregion
+//#region src/cli/utils/count-dropped-lint-files.ts
+const DROPPED_FILES_MESSAGE_PATTERN = /^(\d+) file\(s\) failed to lint and were skipped/;
+const countDroppedLintFiles = (lintPartialFailures) => sumFileCountsMatching(lintPartialFailures, DROPPED_FILES_MESSAGE_PATTERN);
+//#endregion
+//#region src/cli/utils/build-empty-report-message.ts
+const buildEmptyReportMessage = (input) => {
+	const categoryFilters = [...input.categoryFilters];
+	if (categoryFilters.length > 0) return `No issues found in category ${categoryFilters.join(", ")}!`;
+	if (input.demotedDiagnosticCount > 0) return `No issues found! (${input.demotedDiagnosticCount} demoted from the ${input.outputSurface} surface — see config.surfaces.)`;
+	return "No issues found!";
+};
+//#endregion
+//#region src/cli/utils/build-inspect-result.ts
+const buildInspectResult = (input) => {
+	const { payload, cacheStats } = input;
+	const { skippedChecks, skippedCheckReasons } = buildSkippedChecks({
+		didLintFail: payload.didLintFail,
+		lintFailureReason: payload.lintFailureReason,
+		lintPartialFailures: payload.lintPartialFailures,
+		didDeadCodeFail: payload.didDeadCodeFail,
+		deadCodeFailureReason: payload.deadCodeFailureReason,
+		supplyChainOverlapTimedOut: payload.supplyChainOverlapTimedOut,
+		securityScanFailed: payload.securityScanFailed ?? false,
+		securityScanFailureReason: payload.securityScanFailureReason ?? null
+	});
+	return {
+		diagnostics: [...payload.diagnostics],
+		score: payload.score,
+		skippedChecks,
+		...Object.keys(skippedCheckReasons).length > 0 ? { skippedCheckReasons } : {},
+		project: payload.project,
+		elapsedMilliseconds: input.elapsedMilliseconds,
+		scannedFileCount: payload.scannedFileCount,
+		scannedFilePaths: payload.scannedFilePaths,
+		analyzedFiles: payload.analyzedFiles ?? [],
+		scanElapsedMilliseconds: payload.scanElapsedMilliseconds,
+		...cacheStats.lintCacheTotalFileCount === null ? {} : {
+			lintCacheHitFileCount: cacheStats.lintCacheHitFileCount,
+			lintCacheTotalFileCount: cacheStats.lintCacheTotalFileCount
+		},
+		...cacheStats.lintSidecarTotalFileCount === null ? {} : {
+			lintSidecarReplayedFileCount: cacheStats.lintSidecarReplayedFileCount,
+			lintSidecarTotalFileCount: cacheStats.lintSidecarTotalFileCount
+		},
+		...cacheStats.deadCodeCacheHit === null ? {} : { deadCodeCacheHit: cacheStats.deadCodeCacheHit },
+		...cacheStats.deadCodeSummaryCacheHits === null || cacheStats.deadCodeSummaryCacheMisses === null ? {} : {
+			deadCodeSummaryCacheHits: cacheStats.deadCodeSummaryCacheHits,
+			deadCodeSummaryCacheMisses: cacheStats.deadCodeSummaryCacheMisses
+		},
+		...payload.baselineDelta ? { baselineDelta: payload.baselineDelta } : {}
+	};
+};
+//#endregion
+//#region src/cli/utils/build-no-score-message.ts
+const ENTERPRISE_CONTACT_HINT = `Want something custom to your company? Contact us at ${ENTERPRISE_CONTACT_URL}.`;
+const buildNoScoreMessage = (input) => {
+	const unavailableReason = resolveScoreUnavailableReason({
+		isScoreDisabled: input.isScoreDisabled,
+		isAnalysisIncomplete: input.isAnalysisIncomplete ?? false
+	});
+	let reason;
+	switch (unavailableReason) {
+		case "disabled":
+			reason = input.disabledMessage ?? "Score disabled by --no-score.";
+			break;
+		case "analysis-incomplete":
+			reason = "Score not shown because lint or maintainability analysis could not complete.";
+			break;
+		case "api-unavailable":
+			reason = "Score unavailable (could not reach the score API).";
+			break;
+	}
+	return `${reason} ${ENTERPRISE_CONTACT_HINT}`;
+};
+//#endregion
+//#region src/cli/utils/filter-diagnostics-by-categories.ts
+const filterDiagnosticsByCategories = (diagnostics, categories) => categories.size === 0 ? [...diagnostics] : diagnostics.filter((diagnostic) => categories.has(diagnostic.category));
+//#endregion
+//#region src/cli/utils/has-incomplete-score-analysis.ts
+const hasIncompleteScoreAnalysis = (skippedChecks) => skippedChecks.includes("lint") || skippedChecks.includes("dead-code");
+//#endregion
+//#region src/cli/utils/format-diagnostic-site.ts
+const formatDiagnosticSite = (site) => site.line > 0 ? `${site.filePath}:${site.line}` : site.filePath;
+//#endregion
+//#region src/cli/utils/format-rule-summary.ts
+const formatFileContextTag = (diagnostic) => diagnostic.fileContext ? ` (${diagnostic.fileContext} file)` : "";
+const formatRuleSummary = (ruleKey, ruleDiagnostics) => {
+	const firstDiagnostic = ruleDiagnostics[0];
+	if (firstDiagnostic === void 0) return "";
+	const distinctMessages = [...new Set(ruleDiagnostics.map((diagnostic) => diagnostic.message))];
+	const sections = [
+		`Rule: ${ruleKey}`,
+		`Severity: ${firstDiagnostic.severity}`,
+		`Category: ${firstDiagnostic.category}`,
+		`Count: ${ruleDiagnostics.length}`,
+		"",
+		distinctMessages.join("\n\n")
+	];
+	if (firstDiagnostic.help) sections.push("", `Suggestion: ${firstDiagnostic.help}`);
+	if (firstDiagnostic.url) sections.push("", `Docs: ${firstDiagnostic.url}`);
+	const fixRecipeLine = formatFixRecipeLine(firstDiagnostic);
+	if (fixRecipeLine) sections.push("", fixRecipeLine);
+	sections.push("", "Files:");
+	for (const diagnostic of ruleDiagnostics) {
+		sections.push(`  ${formatDiagnosticSite(diagnostic)}${formatFileContextTag(diagnostic)}`);
+		if (diagnostic.suppressionHint) sections.push(`    ${diagnostic.suppressionHint}`);
+	}
+	return `${sections.join("\n")}\n`;
+};
+//#endregion
+//#region src/cli/utils/write-diagnostics-directory.ts
+const ruleDumpFileName = (ruleKey) => ruleKey.replace(/\//g, "--") + ".txt";
+const readPreviousRuleDumpFileNames = (directory) => {
+	try {
+		const previous = JSON.parse(fs$2.readFileSync(path$1.join(directory, "diagnostics.json"), "utf8"));
+		return new Set(previous.filter((d) => typeof d?.plugin === "string" && typeof d?.rule === "string").map((d) => ruleDumpFileName(`${d.plugin}/${d.rule}`)));
+	} catch {
+		return /* @__PURE__ */ new Set();
+	}
+};
+const writeDiagnosticsDirectory = (diagnostics, outputDirectory) => {
+	const directory = outputDirectory ? path$1.resolve(outputDirectory) : path$1.join(tmpdir(), `react-doctor-${randomUUID()}`);
+	if (outputDirectory) for (const fileName of readPreviousRuleDumpFileNames(directory)) fs$2.rmSync(path$1.join(directory, fileName), { force: true });
+	fs$2.mkdirSync(directory, { recursive: true });
+	for (const [ruleKey, ruleDiagnostics] of buildSortedRuleGroups(diagnostics)) fs$2.writeFileSync(path$1.join(directory, ruleDumpFileName(ruleKey)), formatRuleSummary(ruleKey, ruleDiagnostics));
+	fs$2.writeFileSync(path$1.join(directory, "diagnostics.json"), JSON.stringify(diagnostics));
+	return directory;
+};
+//#endregion
+//#region src/cli/utils/print-diagnostics-dump.ts
+const printDiagnosticsDump = (diagnostics, outputDirectory, verbose, stream = "stdout") => gen(function* () {
+	const writtenDirectory = yield* try_({
+		try: () => writeDiagnosticsDirectory(diagnostics, outputDirectory),
+		catch: (cause) => cause
+	}).pipe(orElseSucceed(() => null));
+	if (writtenDirectory === null || !verbose && !outputDirectory) return;
+	const pathLine = highlighter.gray(`  Full diagnostics written to ${writtenDirectory}`);
+	yield* stream === "stderr" || Boolean(outputDirectory) && isJsonModeActive() ? sync(() => process.stderr.write(`${pathLine}\n`)) : log(pathLine);
+});
+//#endregion
+//#region src/cli/utils/collect-affected-files.ts
+const collectAffectedFiles = (diagnostics) => new Set(diagnostics.map((diagnostic) => diagnostic.filePath));
+//#endregion
+//#region src/cli/utils/print-footer.ts
+const buildShareUrl = (input) => {
+	const errorCount = input.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+	const warningCount = input.diagnostics.length - errorCount;
+	const affectedFileCount = collectAffectedFiles(input.diagnostics).size;
+	const parameters = new URLSearchParams({ p: input.projectName });
+	if (input.scoreResult) parameters.set("s", String(input.scoreResult.score));
+	if (errorCount > 0) parameters.set("e", String(errorCount));
+	if (warningCount > 0) parameters.set("w", String(warningCount));
+	if (affectedFileCount > 0) parameters.set("f", String(affectedFileCount));
+	return `${SHARE_BASE_URL}?${parameters.toString()}`;
+};
+const printFooter = (input) => gen(function* () {
+	yield* log("");
+	yield* log(buildSectionDivider());
+	yield* log("");
+	const shareUrl = input.isOffline ? null : buildShareUrl(input);
+	for (const line of buildFooterLinkLines({ shareUrl })) yield* log(line);
+});
+//#endregion
+//#region src/cli/utils/format-elapsed-time.ts
+const formatElapsedTime = (elapsedMilliseconds) => {
+	if (elapsedMilliseconds < 1e3) return `${Math.round(elapsedMilliseconds)}ms`;
+	return `${(elapsedMilliseconds / MILLISECONDS_PER_SECOND).toFixed(1)}s`;
+};
+//#endregion
+//#region src/cli/utils/format-skipped-check-label.ts
+const formatSkippedCheckLabel = (skippedCheck) => skippedCheck === "dead-code" ? "maintainability" : skippedCheck;
+//#endregion
+//#region src/cli/utils/pluralize.ts
+const pluralize = (count, singularNoun) => `${count} ${singularNoun}${count === 1 ? "" : "s"}`;
+//#endregion
+//#region src/cli/utils/print-headless-report.ts
+const formatContextTag = (diagnostic) => diagnostic.fileContext ? ` (${diagnostic.fileContext} file)` : "";
+const printHeadlessReport = (input) => gen(function* () {
+	yield* log(`${highlighter.success("✔")} Scanned ${pluralize(input.scannedFileCount, "file")} in ${formatElapsedTime(input.elapsedMilliseconds)}`);
+	yield* log("");
+	yield* log(highlighter.bold(`React Doctor — ${input.projectName}`));
+	if (input.scoreResult) yield* log(`Score: ${input.scoreResult.score} / 100 ${input.scoreResult.label}`);
+	else yield* log(highlighter.gray(input.noScoreMessage));
+	if (input.diagnostics.length === 0) {
+		yield* log("");
+		yield* log(highlighter.success(`✔ ${input.emptyStateMessage}`));
+	} else {
+		yield* log("");
+		yield* log(highlighter.bold(pluralize(input.diagnostics.length, "issue")));
+		const categoryCounts = /* @__PURE__ */ new Map();
+		for (const diagnostic of input.diagnostics) {
+			const counts = categoryCounts.get(diagnostic.category) ?? {
+				error: 0,
+				warning: 0
+			};
+			categoryCounts.set(diagnostic.category, {
+				error: counts.error + Number(diagnostic.severity === "error"),
+				warning: counts.warning + Number(diagnostic.severity === "warning")
+			});
+		}
+		for (const [category, counts] of categoryCounts) {
+			const countParts = [];
+			if (counts.error > 0) countParts.push(pluralize(counts.error, "error"));
+			if (counts.warning > 0) countParts.push(pluralize(counts.warning, "warning"));
+			yield* log(`${category}: ${countParts.join(", ")}`);
+		}
+		yield* log("");
+		for (const [ruleKey, ruleDiagnostics] of buildSortedRuleGroups(input.diagnostics)) {
+			const representativeDiagnostic = ruleDiagnostics[0];
+			if (representativeDiagnostic === void 0) continue;
+			const severityIcon = representativeDiagnostic.severity === "error" ? "✖" : "⚠";
+			const colorize = representativeDiagnostic.severity === "error" ? highlighter.error : highlighter.warn;
+			const occurrenceSuffix = ruleDiagnostics.length > 1 ? ` ×${ruleDiagnostics.length}` : "";
+			yield* log(colorize(`${severityIcon} ${representativeDiagnostic.title ?? ruleKey}${occurrenceSuffix}`));
+			yield* log(highlighter.gray(`  ${ruleKey}`));
+			for (const diagnostic of ruleDiagnostics) yield* log(`  ${formatDiagnosticSite(diagnostic)}${formatContextTag(diagnostic)}`);
+		}
+	}
+	if (input.skippedChecks.length > 0) {
+		yield* log("");
+		yield* warn(highlighter.warn(`Results are incomplete: ${input.skippedChecks.map(formatSkippedCheckLabel).join(" and ")} checks failed.`));
+	}
+});
+//#endregion
+//#region src/cli/utils/render-agent-guidance.ts
+const AGENT_GUIDANCE_LINES = [
+	"Treat React Doctor diagnostics as starting hypotheses. Read the relevant code before confirming or suppressing each finding.",
+	"For each group, decide true positive, false positive, or needs-human-review, then assign high/medium/low confidence.",
+	"Do not suppress a finding without evidence from the file in question. Confidence requires code context.",
+	"Understand the root cause before editing. Fix the underlying code instead of changing react-doctor config or suppressing rules unless explicitly asked.",
+	"Investigate deeply where relevant: race conditions, security-sensitive flows, state propagation, multi-file refactors, and downstream dependency chains.",
+	"Ignore pure style preferences, theoretical issues without real impact, missing features, and unrelated pre-existing code.",
+	"Start with high-confidence fixes that preserve behavior. Leave low-confidence or product-dependent changes as notes.",
+	"Run `npx react-doctor@latest --verbose --scope changed` before and after changes, plus relevant tests after each focused batch.",
+	"When available, spawn subagents or isolated worktrees for independent rule families, then review and merge only the best safe fixes.",
+	"Split unrelated, broad, or behavior-changing work into separate PRs/branches instead of one large cleanup.",
+	"When one rule spans dozens of files (a migration-scale change), fix a representative sample first, confirm the recipe holds, and get the code owner's sign-off before changing the rest. Don't mass-fix a broad pattern in one unreviewed pass.",
+	"For confirmed issues that cannot be fixed now, create GitHub issues with the rule, file/line, confidence, impact, and proposed fix.",
+	"If a fix needs an API, UX, or architecture decision, stop and ask before editing."
+];
+const printAgentGuidance = () => gen(function* () {
+	yield* log(`${highlighter.bold("Agent guidance")}`);
+	for (const line of AGENT_GUIDANCE_LINES) yield* log(highlighter.gray(`  - ${line}`));
+	yield* log("");
+});
+//#endregion
+//#region src/cli/utils/finalize-inspect-result.ts
+const buildInspectPresentation = ({ options, payload }) => {
+	const surfaceDiagnostics = filterDiagnosticsForSurface([...payload.diagnostics], options.outputSurface, payload.userConfig);
+	return {
+		diagnostics: filterDiagnosticsByCategories(surfaceDiagnostics, options.categoryFilters),
+		demotedDiagnosticCount: payload.diagnostics.length - surfaceDiagnostics.length
+	};
+};
+const printScoreOnlyInspectResult = ({ options, payload, diagnostics, noScoreMessage }) => gen(function* () {
+	if (options.outputDirectory !== null) yield* printDiagnosticsDump(diagnostics, options.outputDirectory, false, "stderr");
+	if (payload.score) {
+		yield* log(`${payload.score.score}`);
+		return;
+	}
+	yield* error(highlighter.gray(noScoreMessage));
+});
+const printFullInspectResultDetails = ({ options, payload, diagnostics, demotedDiagnosticCount }) => gen(function* () {
+	if (options.outputDirectory !== null || options.verbose) yield* printDiagnosticsDump(diagnostics, options.outputDirectory, options.verbose);
+	if (options.categoryFilters.size === 0 && demotedDiagnosticCount > 0) {
+		yield* log(highlighter.gray(`  ${demotedDiagnosticCount} demoted from the ${options.outputSurface} surface (e.g. design cleanup) — run \`npx react-doctor@latest .\` locally for the full list.`));
+		yield* log("");
+	}
+	yield* printFooter({
+		diagnostics,
+		scoreResult: payload.score,
+		projectName: payload.project.projectName,
+		isOffline: options.isCi || !options.share || payload.score === null
+	});
+});
+const printFullInspectResult = ({ options, elapsedMilliseconds, payload, result, diagnostics, demotedDiagnosticCount, noScoreMessage }) => gen(function* () {
+	if (options.isNonInteractiveEnvironment && options.outputSurface !== "prComment") yield* printAgentGuidance();
+	yield* printHeadlessReport({
+		diagnostics,
+		elapsedMilliseconds,
+		emptyStateMessage: buildEmptyReportMessage({
+			categoryFilters: options.categoryFilters,
+			demotedDiagnosticCount,
+			outputSurface: options.outputSurface
+		}),
+		noScoreMessage,
+		projectName: payload.project.projectName,
+		scannedFileCount: payload.scannedFileCount,
+		scoreResult: result.skippedChecks.length > 0 ? null : payload.score,
+		skippedChecks: result.skippedChecks
+	});
+	yield* printFullInspectResultDetails({
+		options,
+		payload,
+		diagnostics,
+		demotedDiagnosticCount
+	});
+});
+const finalizeInspectResult = (input) => gen(function* () {
+	const { payload } = input;
+	const result = buildInspectResult(input);
+	const noScoreMessage = buildNoScoreMessage({
+		isScoreDisabled: input.options.noScore,
+		isAnalysisIncomplete: hasIncompleteScoreAnalysis(result.skippedChecks),
+		disabledMessage: input.options.scoreDisabledMessage
+	});
+	if (input.options.suppressRendering) return result;
+	const presentation = buildInspectPresentation(input);
+	if (input.options.scoreOnly) {
+		yield* printScoreOnlyInspectResult({
+			options: input.options,
+			payload,
+			diagnostics: presentation.diagnostics,
+			noScoreMessage
+		});
+		return result;
+	}
+	yield* printFullInspectResult({
+		...input,
+		...presentation,
+		result,
+		noScoreMessage
+	});
+	return result;
+});
+//#endregion
+//#region src/cli/utils/resolve-worker-telemetry.ts
+/**
+* Projects the resolved lint worker count into the `(workerCount, parallel)`
+* telemetry pair. `resolvedWorkerCount` is the count the scan actually fanned
+* out to (`InspectOutput.scanConcurrency`); `pinnedConcurrency` is the caller's
+* `inspect({ concurrency })` pin, used as the fallback when no scan resolved a
+* count (the pre-scan failure path, or a cache entry persisted before the
+* resolved count was tracked). `parallel` is derived from the count — NOT from
+* whether a count was pinned — so the common auto path (no pin) still reports
+* parallelism correctly instead of always reading `false`.
+*/
+const resolveWorkerTelemetry = (resolvedWorkerCount, pinnedConcurrency) => {
+	const workerCount = resolvedWorkerCount ?? pinnedConcurrency;
+	return {
+		workerCount,
+		parallel: workerCount !== void 0 && workerCount > 1
+	};
+};
+//#endregion
+//#region src/cli/utils/render-and-record-scan.ts
+const silentConsole$2 = makeNoopConsole();
+const deriveScope = (options) => {
+	if (options.baseline || options.baselineReport) return "changed";
+	if (options.changedLineRanges !== null) return options.contextual ? "contextual" : "lines";
+	return options.includePaths.length > 0 ? "files" : "full";
+};
+const buildRunEventConfig = (options, userConfig, resolvedWorkerCount) => {
+	const { workerCount, parallel } = resolveWorkerTelemetry(resolvedWorkerCount, options.concurrency);
+	return {
+		scope: deriveScope(options),
+		parallel,
+		workerCount,
+		maxDurationMs: options.maxDurationMs,
+		lint: options.lint,
+		deadCode: options.deadCode,
+		supplyChain: options.supplyChain,
+		scoreOnly: options.scoreOnly,
+		noScore: options.noScore,
+		respectInlineDisables: options.respectInlineDisables,
+		showWarnings: options.warnings,
+		usedOutputDir: options.outputDirectory !== null,
+		ignoredTagCount: options.ignoredTags.size,
+		hasCustomConfig: userConfig !== null,
+		userConfig
+	};
+};
+const renderAndRecordScan = async (input) => {
+	const cacheStats = {
+		lintCacheHitFileCount: input.cacheStats?.lintCacheHitFileCount ?? null,
+		lintCacheTotalFileCount: input.cacheStats?.lintCacheTotalFileCount ?? null,
+		lintSidecarReplayedFileCount: input.cacheStats?.lintSidecarReplayedFileCount ?? null,
+		lintSidecarTotalFileCount: input.cacheStats?.lintSidecarTotalFileCount ?? null,
+		deadCodeCacheHit: input.cacheStats?.deadCodeCacheHit ?? null,
+		deadCodeSummaryCacheHits: input.cacheStats?.deadCodeSummaryCacheHits ?? null,
+		deadCodeSummaryCacheMisses: input.cacheStats?.deadCodeSummaryCacheMisses ?? null
+	};
+	const finalizeEffect = finalizeInspectResult({
+		options: input.options,
+		elapsedMilliseconds: performance.now() - input.startTime,
+		payload: input.payload,
+		cacheStats
+	});
+	const result = await runPromise(input.options.silent ? finalizeEffect.pipe(provideService(Console, silentConsole$2)) : finalizeEffect);
+	const { workerCount: resolvedWorkerCount, parallel } = resolveWorkerTelemetry(input.payload.scanConcurrency, input.options.concurrency);
+	recordScanMetrics({
+		result,
+		mode: input.scanMode,
+		baselineDegraded: input.baselineDegraded,
+		parallel,
+		workerCount: resolvedWorkerCount,
+		lint: input.options.lint,
+		deadCode: input.options.deadCode,
+		scoreOnly: input.options.scoreOnly,
+		noScore: input.options.noScore,
+		didLintFail: input.payload.didLintFail,
+		lintFailureReasonKind: input.payload.lintFailureReasonKind,
+		didDeadCodeFail: input.payload.didDeadCodeFail,
+		userConfig: input.payload.userConfig,
+		suppressedRuleCounts: input.payload.suppressedRuleCounts ?? []
+	});
+	recordRunEvent(input.rootSpan, {
+		...buildRunEventConfig(input.options, input.payload.userConfig, resolvedWorkerCount),
+		result,
+		mode: input.scanMode,
+		gateExempt: input.baselineDegraded,
+		wholeRepoCacheHit: input.wholeRepoCacheHit,
+		didLintFail: input.payload.didLintFail,
+		lintFailureReasonKind: input.payload.lintFailureReasonKind,
+		lintPartialFailureCount: input.payload.lintPartialFailures.length,
+		lintDroppedFileCount: countDroppedLintFiles(input.payload.lintPartialFailures),
+		lintDeadlineSkippedFileCount: countDeadlineSkippedFiles(input.payload.lintPartialFailures),
+		didDeadCodeFail: input.payload.didDeadCodeFail,
+		supplyChainOverlapTimedOut: input.payload.supplyChainOverlapTimedOut,
+		securityScanFailed: input.payload.securityScanFailed,
+		suppressedRuleCounts: input.payload.suppressedRuleCounts ?? []
+	});
+	return result;
+};
+//#endregion
+//#region src/cli/utils/copy-unchanged-baseline-sources.ts
+const copyUnchangedBaselineSources = async (input) => {
+	const baseMaterializedFiles = new Set(input.baseMaterializedFiles.map(toForwardSlashes));
+	const headChangedFiles = new Set(input.headChangedFiles.map(toForwardSlashes));
+	const untrackedFiles = new Set(input.untrackedFiles.map(toForwardSlashes));
+	const sourceDirectory = path$1.resolve(input.directory);
+	const targetDirectory = path$1.resolve(input.tempDirectory);
+	return (await mapWithConcurrency(input.sourceFiles.filter((filePath) => {
+		const normalizedPath = toForwardSlashes(filePath);
+		return !baseMaterializedFiles.has(normalizedPath) && !headChangedFiles.has(normalizedPath) && !untrackedFiles.has(normalizedPath);
+	}), 32, async (filePath) => {
+		input.signal?.throwIfAborted();
+		if (input.deadlineEpochMs !== null && Date.now() >= input.deadlineEpochMs) return false;
+		const sourcePath = path$1.resolve(sourceDirectory, filePath);
+		const targetPath = path$1.resolve(targetDirectory, filePath);
+		if (!isPathInsideDirectory(sourcePath, sourceDirectory) || !isPathInsideDirectory(targetPath, targetDirectory)) return false;
+		try {
+			if (!(await fs$1.lstat(sourcePath)).isFile()) return false;
+			await fs$1.mkdir(path$1.dirname(targetPath), { recursive: true });
+			await fs$1.copyFile(sourcePath, targetPath);
+			return true;
+		} catch {
+			input.signal?.throwIfAborted();
+			return false;
+		}
+	})).every(Boolean);
+};
+//#endregion
+//#region src/cli/utils/read-baseline-line-map.ts
+const readBaselineLineMap = (directory, ref) => {
+	const hunksByFile = /* @__PURE__ */ new Map();
+	const revision = ref ? runGit(directory, [
+		"rev-parse",
+		"--verify",
+		"--end-of-options",
+		`${ref}^{commit}`
+	]) : null;
+	const patch = revision ? runGitRaw(directory, [
+		"-c",
+		"core.quotePath=false",
+		"diff",
+		"--no-ext-diff",
+		"--no-textconv",
+		"--unified=0",
+		"--find-renames",
+		"--relative",
+		"--src-prefix=a/",
+		"--dst-prefix=b/",
+		revision,
+		"--"
+	]) : null;
+	let currentHunks;
+	for (const line of patch?.split("\n") ?? []) {
+		if (line.startsWith("+++ ")) {
+			currentHunks = [];
+			const headerPath = line.slice(4).replace(/\t$/, "");
+			let filePath = headerPath;
+			if (headerPath.startsWith("\"")) try {
+				filePath = JSON.parse(headerPath);
+			} catch {
+				continue;
+			}
+			if (filePath.startsWith("b/")) hunksByFile.set(filePath.slice(2), currentHunks);
+			continue;
+		}
+		const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+		if (!hunk || !currentHunks) continue;
+		currentHunks.push({
+			baseStart: Number(hunk[1]),
+			baseCount: hunk[2] === void 0 ? 1 : Number(hunk[2]),
+			headStart: Number(hunk[3]),
+			headCount: hunk[4] === void 0 ? 1 : Number(hunk[4])
+		});
+	}
+	return (filePath, baseLine) => {
+		let lineOffset = 0;
+		for (const hunk of hunksByFile.get(filePath) ?? []) {
+			if (baseLine < hunk.baseStart) break;
+			if (hunk.baseCount > 0 && baseLine < hunk.baseStart + hunk.baseCount) return hunk.headStart + Math.min(baseLine - hunk.baseStart, Math.max(0, hunk.headCount - 1));
+			if (hunk.baseCount === 0 && baseLine === hunk.baseStart) break;
+			lineOffset = hunk.headStart + Math.max(1, hunk.headCount) - (hunk.baseStart + Math.max(1, hunk.baseCount));
+		}
+		return baseLine + lineOffset;
+	};
+};
+//#endregion
+//#region src/cli/utils/read-diagnostic-evidence.ts
+const SOURCE_EXTENSIONS = [
+	".ts",
+	".tsx",
+	".js",
+	".jsx",
+	".mts",
+	".cts",
+	".mjs",
+	".cjs"
+];
+const COMPONENT_WRAPPER_NAMES = new Set(["memo", "forwardRef"]);
+const getScriptKind = (filePath) => {
+	const extension = path.extname(filePath).toLowerCase();
+	if (extension === ".tsx") return typescriptBinding.ScriptKind.TSX;
+	if (extension === ".jsx") return typescriptBinding.ScriptKind.JSX;
+	if (extension === ".js" || extension === ".mjs" || extension === ".cjs") return typescriptBinding.ScriptKind.JS;
+	return typescriptBinding.ScriptKind.TS;
+};
+const resolveSafeSourcePath = (rootDirectory, filePath) => {
+	try {
+		const resolvedRootDirectory = fs.realpathSync(rootDirectory);
+		const absolutePath = path.resolve(resolvedRootDirectory, filePath);
+		const relativePath = path.relative(resolvedRootDirectory, absolutePath);
+		if (relativePath.length === 0 || relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) return null;
+		const stats = fs.lstatSync(absolutePath);
+		if (!stats.isFile() || stats.isSymbolicLink()) return null;
+		const realPath = fs.realpathSync(absolutePath);
+		const realRelativePath = path.relative(resolvedRootDirectory, realPath);
+		return realRelativePath !== ".." && !realRelativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(realRelativePath) ? realPath : null;
+	} catch {
+		return null;
+	}
+};
+const readSourceRecord = (rootDirectory, filePath, state) => {
+	const normalizedFilePath = filePath.replace(/\\/g, "/");
+	if (state.recordByFilePath.has(normalizedFilePath)) return state.recordByFilePath.get(normalizedFilePath) ?? null;
+	const absolutePath = resolveSafeSourcePath(rootDirectory, normalizedFilePath);
+	if (absolutePath === null) {
+		state.recordByFilePath.set(normalizedFilePath, null);
+		return null;
+	}
+	try {
+		const sourceText = fs.readFileSync(absolutePath, "utf-8");
+		const record = {
+			absolutePath,
+			filePath: normalizedFilePath,
+			sourceFile: typescriptBinding.createSourceFile(absolutePath, sourceText, typescriptBinding.ScriptTarget.Latest, true, getScriptKind(absolutePath)),
+			sourceText
+		};
+		state.recordByFilePath.set(normalizedFilePath, record);
+		return record;
+	} catch {
+		state.recordByFilePath.set(normalizedFilePath, null);
+		return null;
+	}
+};
+const listSourceRecords = (rootDirectory, state) => {
+	if (state.sourceRecords !== null) return state.sourceRecords;
+	state.sourceRecords = listSourceFiles(rootDirectory).flatMap((filePath) => {
+		const record = readSourceRecord(rootDirectory, filePath, state);
+		return record === null ? [] : [record];
+	});
+	return state.sourceRecords;
+};
+const unwrapExpression = (expression) => {
+	let currentExpression = expression;
+	while (typescriptBinding.isParenthesizedExpression(currentExpression) || typescriptBinding.isAsExpression(currentExpression) || typescriptBinding.isTypeAssertionExpression(currentExpression) || typescriptBinding.isNonNullExpression(currentExpression) || typescriptBinding.isSatisfiesExpression(currentExpression)) currentExpression = currentExpression.expression;
+	return currentExpression;
+};
+const getCalleeName = (expression) => {
+	const unwrappedExpression = unwrapExpression(expression);
+	if (typescriptBinding.isIdentifier(unwrappedExpression)) return unwrappedExpression.text;
+	if (typescriptBinding.isPropertyAccessExpression(unwrappedExpression)) return unwrappedExpression.name.text;
+	return null;
+};
+const isComponentWrapperCall = (node) => {
+	const wrapperName = getCalleeName(node.expression);
+	return wrapperName !== null && COMPONENT_WRAPPER_NAMES.has(wrapperName);
+};
+const getFunctionName = (node) => {
+	if (typescriptBinding.isFunctionDeclaration(node) && node.name !== void 0) return node.name.text;
+	if (typescriptBinding.isArrowFunction(node) || typescriptBinding.isFunctionExpression(node)) {
+		let componentExpression = node;
+		while (true) {
+			const parent = componentExpression.parent;
+			if (typescriptBinding.isParenthesizedExpression(parent) || typescriptBinding.isAsExpression(parent) || typescriptBinding.isTypeAssertionExpression(parent) || typescriptBinding.isNonNullExpression(parent) || typescriptBinding.isSatisfiesExpression(parent)) {
+				componentExpression = parent;
+				continue;
+			}
+			if (typescriptBinding.isCallExpression(parent) && parent.arguments[0] === componentExpression && isComponentWrapperCall(parent)) {
+				componentExpression = parent;
+				continue;
+			}
+			if (typescriptBinding.isVariableDeclaration(parent) && typescriptBinding.isIdentifier(parent.name)) return parent.name.text;
+			return node.name?.text ?? null;
+		}
+	}
+	return null;
+};
+const isComponentFunction = (node) => typescriptBinding.isFunctionDeclaration(node) || typescriptBinding.isFunctionExpression(node) || typescriptBinding.isArrowFunction(node);
+const isDefaultExportedComponent = (record, node, componentName) => {
+	if (typescriptBinding.canHaveModifiers(node) && typescriptBinding.getModifiers(node)?.some((modifier) => modifier.kind === typescriptBinding.SyntaxKind.DefaultKeyword)) return true;
+	return record.sourceFile.statements.some((statement) => typescriptBinding.isExportAssignment(statement) && typescriptBinding.isIdentifier(statement.expression) && statement.expression.text === componentName);
+};
+const findEnclosingComponent = (record, diagnostic) => {
+	if (!Number.isInteger(diagnostic.line) || diagnostic.line < 1) return null;
+	const lineIndex = diagnostic.line - 1;
+	const lineStarts = record.sourceFile.getLineStarts();
+	const lineStart = lineStarts[lineIndex];
+	if (lineStart === void 0) return null;
+	const nextLineStart = lineStarts[lineIndex + 1] ?? record.sourceFile.end;
+	const lineEnd = Math.max(lineStart, nextLineStart - 1);
+	const columnIndex = Number.isInteger(diagnostic.column) ? Math.max(0, diagnostic.column - 1) : 0;
+	const diagnosticPosition = Math.min(lineStart + columnIndex, lineEnd);
+	let component = null;
+	let componentWidth = Number.POSITIVE_INFINITY;
+	const visit = (node) => {
+		if (diagnosticPosition < node.getStart(record.sourceFile) || diagnosticPosition > node.end) return;
+		if (isComponentFunction(node)) {
+			const name = getFunctionName(node);
+			const width = node.end - node.getStart(record.sourceFile);
+			if (name !== null && /^[A-Z]/.test(name) && width < componentWidth) {
+				component = {
+					isDefaultExport: isDefaultExportedComponent(record, node, name),
+					name,
+					node,
+					record
+				};
+				componentWidth = width;
+			}
+		}
+		typescriptBinding.forEachChild(node, visit);
+	};
+	visit(record.sourceFile);
+	return component;
+};
+const moduleSpecifierTargetsComponent = (callerRecord, moduleSpecifier, componentRecord) => {
+	if (!moduleSpecifier.startsWith(".")) return false;
+	const unresolvedPath = path.resolve(path.dirname(callerRecord.absolutePath), moduleSpecifier);
+	const specifiedExtension = path.extname(unresolvedPath).toLowerCase();
+	const sourcePathWithoutExtension = SOURCE_EXTENSIONS.includes(specifiedExtension) ? unresolvedPath.slice(0, -specifiedExtension.length) : unresolvedPath;
+	return [
+		unresolvedPath,
+		...SOURCE_EXTENSIONS.map((extension) => `${sourcePathWithoutExtension}${extension}`),
+		...sourcePathWithoutExtension === unresolvedPath ? SOURCE_EXTENSIONS.map((extension) => path.join(unresolvedPath, `index${extension}`)) : []
+	].includes(componentRecord.absolutePath);
+};
+const getComponentTagNames = (record, component) => {
+	if (record.absolutePath === component.record.absolutePath) return new Set([component.name]);
+	const tagNames = /* @__PURE__ */ new Set();
+	for (const statement of record.sourceFile.statements) {
+		if (!typescriptBinding.isImportDeclaration(statement) || !typescriptBinding.isStringLiteral(statement.moduleSpecifier) || !moduleSpecifierTargetsComponent(record, statement.moduleSpecifier.text, component.record)) continue;
+		const importClause = statement.importClause;
+		if (component.isDefaultExport && importClause?.name !== void 0) tagNames.add(importClause.name.text);
+		const namedBindings = importClause?.namedBindings;
+		if (namedBindings !== void 0 && typescriptBinding.isNamedImports(namedBindings)) {
+			for (const element of namedBindings.elements) if ((element.propertyName?.text ?? element.name.text) === component.name) tagNames.add(element.name.text);
+		}
+	}
+	return tagNames;
+};
+const getTransparentCall = (functionNode) => {
+	if (functionNode.body === void 0) return null;
+	if (!typescriptBinding.isBlock(functionNode.body)) {
+		const expression = unwrapExpression(functionNode.body);
+		return typescriptBinding.isCallExpression(expression) ? expression : null;
+	}
+	if (functionNode.body.statements.length !== 1) return null;
+	const statement = functionNode.body.statements[0];
+	if (statement === void 0) return null;
+	const expression = typescriptBinding.isExpressionStatement(statement) || typescriptBinding.isReturnStatement(statement) ? statement.expression : void 0;
+	if (expression === void 0) return null;
+	const unwrappedExpression = unwrapExpression(expression);
+	return typescriptBinding.isCallExpression(unwrappedExpression) ? unwrappedExpression : null;
+};
+const resolveTransparentTarget = (functionNode) => {
+	const call = getTransparentCall(functionNode);
+	if (call === null) return null;
+	const target = unwrapExpression(call.expression);
+	if (!typescriptBinding.isIdentifier(target) || call.arguments.length !== functionNode.parameters.length) return null;
+	for (const [parameterIndex, parameter] of functionNode.parameters.entries()) {
+		const argument = call.arguments[parameterIndex];
+		const unwrappedArgument = argument === void 0 ? null : unwrapExpression(argument);
+		if (!typescriptBinding.isIdentifier(parameter.name) || unwrappedArgument === null || !typescriptBinding.isIdentifier(unwrappedArgument) || unwrappedArgument.text !== parameter.name.text) return null;
+	}
+	return target.text;
+};
+const getForwardingFunction = (declaration) => {
+	if (typescriptBinding.isFunctionDeclaration(declaration)) return declaration;
+	if (!typescriptBinding.isVariableDeclaration(declaration) || declaration.initializer === void 0) return null;
+	const initializer = unwrapExpression(declaration.initializer);
+	if (typescriptBinding.isArrowFunction(initializer) || typescriptBinding.isFunctionExpression(initializer)) return initializer;
+	if (typescriptBinding.isCallExpression(initializer) && getCalleeName(initializer.expression) === "useCallback") {
+		const callback = initializer.arguments[0];
+		if (callback !== void 0 && (typescriptBinding.isArrowFunction(callback) || typescriptBinding.isFunctionExpression(callback))) return callback;
+	}
+	return null;
+};
+const getDeclaredBindingName = (node) => {
+	if ((typescriptBinding.isVariableDeclaration(node) || typescriptBinding.isParameter(node) || typescriptBinding.isBindingElement(node) || typescriptBinding.isFunctionDeclaration(node)) && node.name !== void 0 && typescriptBinding.isIdentifier(node.name)) return node.name.text;
+	if (typescriptBinding.isImportClause(node)) return node.name?.text ?? null;
+	if (typescriptBinding.isImportSpecifier(node) || typescriptBinding.isNamespaceImport(node)) return node.name.text;
+	return null;
+};
+const findBindingScope = (node) => {
+	let currentNode = node;
+	while (currentNode !== void 0) {
+		if (typescriptBinding.isParameter(currentNode) && typescriptBinding.isFunctionLike(currentNode.parent)) return currentNode.parent;
+		if (typescriptBinding.isBlock(currentNode) || typescriptBinding.isModuleBlock(currentNode) || typescriptBinding.isSourceFile(currentNode)) return currentNode;
+		currentNode = currentNode.parent;
+	}
+	return node.getSourceFile();
+};
+const findBindingDeclaration = (record, binding) => {
+	const usagePosition = binding.getStart(record.sourceFile);
+	const candidates = [];
+	const visit = (node) => {
+		if (getDeclaredBindingName(node) === binding.text) {
+			const scope = findBindingScope(node);
+			const isVisibleScope = usagePosition >= scope.getStart(record.sourceFile) && usagePosition <= scope.end;
+			const isVisibleDeclaration = typescriptBinding.isFunctionDeclaration(node) || typescriptBinding.isParameter(node) || typescriptBinding.isBindingElement(node) || typescriptBinding.isImportClause(node) || typescriptBinding.isImportSpecifier(node) || typescriptBinding.isNamespaceImport(node) || node.getStart(record.sourceFile) < usagePosition;
+			if (isVisibleScope && isVisibleDeclaration) candidates.push({
+				declaration: node,
+				scope
+			});
+		}
+		typescriptBinding.forEachChild(node, visit);
+	};
+	visit(record.sourceFile);
+	let nearestCandidate = null;
+	let nearestScopeWidth = Number.POSITIVE_INFINITY;
+	let isNearestScopeAmbiguous = false;
+	for (const candidate of candidates) {
+		const scopeWidth = candidate.scope.end - candidate.scope.getStart(record.sourceFile);
+		if (scopeWidth < nearestScopeWidth) {
+			nearestCandidate = candidate;
+			nearestScopeWidth = scopeWidth;
+			isNearestScopeAmbiguous = false;
+		} else if (scopeWidth === nearestScopeWidth) isNearestScopeAmbiguous = true;
+	}
+	if (isNearestScopeAmbiguous) return null;
+	const declaration = nearestCandidate?.declaration;
+	return declaration !== void 0 && (typescriptBinding.isVariableDeclaration(declaration) || typescriptBinding.isFunctionDeclaration(declaration)) ? declaration : null;
+};
+const resolveHandlerBinding = (record, binding) => {
+	const declaration = findBindingDeclaration(record, binding);
+	if (declaration === null) return binding.text;
+	const forwardingFunction = getForwardingFunction(declaration);
+	const target = forwardingFunction === null ? null : resolveTransparentTarget(forwardingFunction);
+	return target === null || target === binding.text ? binding.text : target;
+};
+const getJsxTagName = (node) => typescriptBinding.isIdentifier(node.tagName) ? node.tagName.text : null;
+const getHandlerBinding = (node, propName) => {
+	for (const property of node.attributes.properties) {
+		if (!typescriptBinding.isJsxAttribute(property) || property.name.getText() !== propName) continue;
+		const initializer = property.initializer;
+		if (initializer === void 0 || !typescriptBinding.isJsxExpression(initializer)) return null;
+		if (initializer.expression === void 0) return null;
+		const expression = unwrapExpression(initializer.expression);
+		return typescriptBinding.isIdentifier(expression) ? expression : null;
+	}
+	return null;
+};
+const getForwardedHandlerAliases = (rootDirectory, component, propNames, state) => {
+	const cacheKey = `${component.record.filePath}\0${component.name}\0${[...propNames].sort().join("\0")}`;
+	const cachedAliases = state.aliasesByComponent.get(cacheKey);
+	if (cachedAliases !== void 0) return cachedAliases;
+	const bindingsByPropName = /* @__PURE__ */ new Map();
+	const unresolvedPropNames = /* @__PURE__ */ new Set();
+	let callsiteCount = 0;
+	for (const record of listSourceRecords(rootDirectory, state)) {
+		const tagNames = getComponentTagNames(record, component);
+		if (tagNames.size === 0) continue;
+		const visit = (node) => {
+			if (record === component.record && node === component.node) return;
+			if (typescriptBinding.isJsxOpeningElement(node) || typescriptBinding.isJsxSelfClosingElement(node)) {
+				const tagName = getJsxTagName(node);
+				if (tagName !== null && tagNames.has(tagName)) {
+					callsiteCount += 1;
+					for (const propName of propNames) {
+						const binding = getHandlerBinding(node, propName);
+						if (binding === null) {
+							unresolvedPropNames.add(propName);
+							continue;
+						}
+						const bindings = bindingsByPropName.get(propName) ?? /* @__PURE__ */ new Set();
+						bindings.add(resolveHandlerBinding(record, binding));
+						bindingsByPropName.set(propName, bindings);
+					}
+				}
+			}
+			typescriptBinding.forEachChild(node, visit);
+		};
+		visit(record.sourceFile);
+	}
+	const aliases = /* @__PURE__ */ new Map();
+	if (callsiteCount > 0) for (const [propName, bindings] of bindingsByPropName) {
+		if (bindings.size !== 1 || unresolvedPropNames.has(propName)) continue;
+		const [bindingName] = bindings;
+		if (bindingName !== void 0) aliases.set(propName, bindingName);
+	}
+	state.aliasesByComponent.set(cacheKey, aliases);
+	return aliases;
+};
+const normalizeForwardedHandlers = (evidence, aliases) => {
+	let normalizedEvidence = evidence;
+	for (const [propName, bindingName] of aliases) normalizedEvidence = normalizedEvidence.replace(new RegExp(`\\{\\s*${propName}\\s*\\}`, "g"), `{${bindingName}}`).replace(new RegExp(`=>\\s*${propName}\\s*\\(`, "g"), `=> ${bindingName}(`);
+	return normalizedEvidence;
+};
+const createDiagnosticEvidenceReader = (rootDirectory, options = {}) => {
+	const state = {
+		aliasesByComponent: /* @__PURE__ */ new Map(),
+		recordByFilePath: /* @__PURE__ */ new Map(),
+		sourceRecords: null
+	};
+	return (diagnostic) => {
+		const record = readSourceRecord(rootDirectory, diagnostic.filePath, state);
+		if (record === null || !Number.isInteger(diagnostic.line)) return null;
+		const sourceLines = record.sourceText.split(/\r?\n/);
+		const startLineIndex = Math.max(0, diagnostic.line - 1);
+		const endLineIndex = Math.max(startLineIndex, (diagnostic.endLine ?? diagnostic.line) - 1);
+		const evidence = diagnostic.offset !== void 0 && diagnostic.length !== void 0 && diagnostic.length > 0 ? Buffer.from(record.sourceText).subarray(diagnostic.offset, diagnostic.offset + diagnostic.length).toString("utf-8") : sourceLines.slice(startLineIndex, endLineIndex + 1).map((line, index, lines) => {
+			const start = index === 0 ? Math.max(0, diagnostic.column - 1) : 0;
+			const end = index === lines.length - 1 && diagnostic.endColumn !== void 0 ? diagnostic.endColumn - 1 : void 0;
+			return line.slice(start, end);
+		}).join("\n");
+		if (!options.resolveForwardedHandlers) return evidence;
+		const propNames = new Set(evidence.match(/\bon[A-Z]\w*\b/g) ?? []);
+		if (propNames.size === 0) return evidence;
+		const component = findEnclosingComponent(record, diagnostic);
+		if (component === null) return evidence;
+		return normalizeForwardedHandlers(evidence, getForwardedHandlerAliases(rootDirectory, component, propNames, state));
+	};
+};
+//#endregion
+//#region src/cli/utils/with-diagnostic-fingerprints.ts
+const withDiagnosticFingerprints = (directory, diagnostics) => {
+	const readEvidence = createDiagnosticEvidenceReader(directory);
+	return diagnostics.map((diagnostic) => {
+		const explicitIdentity = Reflect.get(diagnostic, DIAGNOSTIC_DELTA_IDENTITY);
+		return {
+			...diagnostic,
+			fingerprint: typeof explicitIdentity === "string" ? `identity:${fingerprintDiagnosticEvidence(explicitIdentity)}` : fingerprintDiagnosticEvidence(readEvidence(diagnostic) ?? "")
+		};
+	});
+};
+//#endregion
+//#region src/cli/utils/is-materializable-git-source.ts
+const GIT_LFS_POINTER_HEADER = "version https://git-lfs.github.com/spec/v1";
+const isMaterializableGitSource = (content) => !content.includes("\0") && !content.startsWith(GIT_LFS_POINTER_HEADER);
+//#endregion
+//#region src/cli/utils/materialize-baseline-files.ts
+const materializeBaselineFiles = (input) => runPromise(gen(function* () {
+	const git = yield* Git;
+	const diffPlan = yield* git.baselineDiffPlan({
+		directory: input.directory,
+		ref: input.ref
+	});
+	const baseFiles = input.baseFiles ?? diffPlan?.baseFiles;
+	const headFiles = input.headFiles ?? diffPlan?.headFiles;
+	const untrackedFiles = diffPlan?.untrackedFiles ?? [];
+	if (baseFiles === void 0 || headFiles === void 0) return null;
+	const files = [...new Set([...input.files, ...baseFiles])];
+	const tree = yield* materializeSourceTree({
+		directory: input.directory,
+		files,
+		tempDirectory: input.tempDirectory,
+		readContent: (relativePath) => git.showRefContent({
+			directory: input.directory,
+			ref: input.ref,
+			relativePath,
+			options: { maxBufferBytes: GIT_SHOW_MAX_BUFFER_BYTES }
+		}).pipe(map((content) => content !== null && isMaterializableGitSource(content) ? content : null))
+	});
+	const materializedFiles = new Set(tree.materializedFiles);
+	const headFileSet = new Set(headFiles);
+	return {
+		...tree,
+		renamedFiles: diffPlan?.renamedFiles,
+		baseFiles,
+		headFiles,
+		isComplete: baseFiles.every((filePath) => materializedFiles.has(filePath) || !headFileSet.has(diffPlan?.renamedFiles?.[filePath] ?? filePath)),
+		untrackedFiles
+	};
+}).pipe(provide(Git.layerNode)));
+/**
+* Resolves the commit a baseline scan should read base content from — the
+* merge-base of `ref` and HEAD, so "introduced" is measured against the branch
+* point. `null` when unresolvable (ref missing/unsafe, no merge-base).
+*/
+const resolveMergeBaseRef = async (directory, ref) => {
+	try {
+		return await runPromise(gen(function* () {
+			return yield* (yield* Git).mergeBase({
+				directory,
+				ref
+			});
+		}).pipe(provide(Git.layerNode)));
+	} catch {
+		return null;
+	}
+};
+//#endregion
+//#region src/cli/utils/has-unlinted-surviving-base-file.ts
+const hasUnlintedSurvivingBaseFile = (input) => {
+	const analyzedBaseFiles = new Set(input.analyzedBaseFiles.map(toForwardSlashes));
+	return filterSourceFiles(input.baseLintPaths.map(toForwardSlashes)).some((filePath) => input.headFiles.has(input.renamedFiles?.[filePath] ?? filePath) && !analyzedBaseFiles.has(filePath));
+};
+//#endregion
+//#region src/cli/utils/run-baseline-comparison.ts
+const silentConsole$1 = makeNoopConsole();
+const countIncompleteLintFiles = (lintPartialFailures) => countDroppedLintFiles(lintPartialFailures) + countDeadlineSkippedFiles(lintPartialFailures);
+const runBaselineComparison = async (input) => {
+	const baselineIncludePaths = filterPathsOutsideDirectories({
+		rootDirectory: input.directory,
+		relativePaths: input.options.includePaths,
+		excludedDirectories: input.options.excludedProjectDirectories
+	});
+	const baselineBaseFiles = input.baseFiles ? filterPathsOutsideDirectories({
+		rootDirectory: input.directory,
+		relativePaths: input.baseFiles,
+		excludedDirectories: input.options.excludedProjectDirectories
+	}) : void 0;
+	const baselineHeadFiles = input.headFiles ? filterPathsOutsideDirectories({
+		rootDirectory: input.directory,
+		relativePaths: input.headFiles,
+		excludedDirectories: input.options.excludedProjectDirectories
+	}) : void 0;
+	const remainingBaselineBudgetMs = input.deadlineEpochMs === null ? null : remainingDeadlineBudgetMs(input.deadlineEpochMs);
+	if (remainingBaselineBudgetMs === 0) return null;
+	const baselineDeadlineSignal = remainingBaselineBudgetMs === null ? void 0 : AbortSignal.timeout(remainingBaselineBudgetMs);
+	const baselineListingSignal = baselineDeadlineSignal === void 0 ? input.oxlintRuntime.abortSignal : input.oxlintRuntime.abortSignal === void 0 ? baselineDeadlineSignal : AbortSignal.any([input.oxlintRuntime.abortSignal, baselineDeadlineSignal]);
+	let maintainabilitySourceFiles = [];
+	if (input.options.deadCode) try {
+		maintainabilitySourceFiles = (await listSourceFilesCooperative(input.directory, baselineListingSignal)).filter((filePath) => MAINTAINABILITY_SOURCE_FILE_PATTERN.test(filePath) && classifyFileContext(filePath) === "production");
+	} catch (error) {
+		if (baselineDeadlineSignal?.aborted) return null;
+		throw error;
+	}
+	const temporaryDirectory = mkdtempSync(path.join(tmpdir(), BASELINE_FILES_TEMP_DIR_PREFIX));
+	const snapshot = await materializeBaselineFiles({
+		directory: input.directory,
+		ref: input.baselineRef,
+		files: input.options.deadCode ? input.options.includePaths : baselineIncludePaths,
+		baseFiles: input.options.deadCode ? input.baseFiles : baselineBaseFiles,
+		headFiles: input.options.deadCode ? input.headFiles : baselineHeadFiles,
+		tempDirectory: temporaryDirectory
+	}).catch((error) => {
+		rmSync(temporaryDirectory, {
+			recursive: true,
+			force: true
+		});
+		throw error;
+	});
+	if (snapshot === null) {
+		rmSync(temporaryDirectory, {
+			recursive: true,
+			force: true
+		});
+		return null;
+	}
+	try {
+		if (!snapshot.isComplete) return null;
+		if (input.options.deadCode && !await copyUnchangedBaselineSources({
+			directory: input.directory,
+			sourceFiles: maintainabilitySourceFiles,
+			baseMaterializedFiles: snapshot.materializedFiles,
+			headChangedFiles: snapshot.headFiles,
+			untrackedFiles: snapshot.untrackedFiles,
+			tempDirectory: snapshot.tempDirectory,
+			deadlineEpochMs: input.deadlineEpochMs,
+			signal: input.oxlintRuntime.abortSignal
+		})) return null;
+		const filteredSnapshotBaseFiles = filterPathsOutsideDirectories({
+			rootDirectory: input.directory,
+			relativePaths: snapshot.baseFiles,
+			excludedDirectories: input.options.excludedProjectDirectories
+		});
+		const filteredSnapshotHeadFiles = filterPathsOutsideDirectories({
+			rootDirectory: input.directory,
+			relativePaths: snapshot.headFiles,
+			excludedDirectories: input.options.excludedProjectDirectories
+		});
+		const analyzedHeadFiles = new Set(input.headAnalyzedFiles.map(toForwardSlashes));
+		const baseFiles = new Set((baselineBaseFiles ?? filteredSnapshotBaseFiles).map(toForwardSlashes));
+		const expectedHeadFiles = new Set((baselineHeadFiles ?? filteredSnapshotHeadFiles).map(toForwardSlashes));
+		for (const filePath of baselineIncludePaths) {
+			const normalizedFilePath = toForwardSlashes(filePath);
+			if (!baseFiles.has(normalizedFilePath)) expectedHeadFiles.add(normalizedFilePath);
+		}
+		if (input.options.lint && filterSourceFiles([...expectedHeadFiles]).some((filePath) => !analyzedHeadFiles.has(filePath))) return null;
+		const baselineLintPaths = new Set([...baselineIncludePaths, ...filteredSnapshotBaseFiles].map(toForwardSlashes));
+		const materializedLintPaths = snapshot.materializedFiles.filter((filePath) => baselineLintPaths.has(toForwardSlashes(filePath)));
+		const maintainabilityFocusPaths = [...new Set([...input.options.includePaths, ...snapshot.baseFiles].map(toForwardSlashes))];
+		const baselineExcludedProjectDirectories = input.options.excludedProjectDirectories.map((excludedDirectory) => path.resolve(excludedDirectory)).filter((excludedDirectory) => isPathInsideDirectory(excludedDirectory, input.directory)).map((excludedDirectory) => path.resolve(snapshot.tempDirectory, path.relative(input.directory, excludedDirectory)));
+		const baseIncludePaths = materializedLintPaths.length > 0 ? materializedLintPaths : maintainabilityFocusPaths;
+		const runtimeLayers = buildRuntimeLayers({
+			directory: snapshot.tempDirectory,
+			hasConfigOverride: true,
+			userConfig: input.userConfig,
+			configSourceDirectory: input.configSourceDirectory,
+			projectInfoOverride: input.headProjectInfo,
+			shouldSkipLint: !input.options.lint || !input.resolvedNodeBinaryPath || materializedLintPaths.length === 0,
+			shouldRunDeadCode: input.options.deadCode,
+			shouldRunSupplyChain: input.options.supplyChain,
+			shouldComputeScore: false,
+			shouldShowProgressSpinners: false,
+			oxlintConcurrency: input.oxlintRuntime.concurrency,
+			oxlintSpawnSlots: input.oxlintRuntime.spawnSlots
+		});
+		const baseOutput = await runPromise(restoreLegacyThrow(runInspect({
+			directory: snapshot.tempDirectory,
+			includePaths: baseIncludePaths,
+			maintainabilityFocusPaths,
+			customRulesOnly: input.options.customRulesOnly,
+			respectInlineDisables: input.options.respectInlineDisables,
+			warnings: input.options.warnings,
+			adoptExistingLintConfig: input.options.adoptExistingLintConfig,
+			ignoredTags: input.options.ignoredTags,
+			includedTags: input.options.includedTags,
+			includeTagDefaults: input.options.includeTagDefaults,
+			nodeBinaryPath: input.resolvedNodeBinaryPath ?? void 0,
+			runDeadCode: input.options.deadCode,
+			isCi: input.options.isCi,
+			doctorVersion: VERSION,
+			runId: getRunId(),
+			resolveLocalGithubViewerPermission: false,
+			suppressScanSummary: true,
+			supplyChainManifestChanged: input.options.supplyChainManifestChanged,
+			deadlineEpochMs: input.deadlineEpochMs ?? void 0,
+			signal: input.oxlintRuntime.abortSignal,
+			excludedProjectDirectories: baselineExcludedProjectDirectories,
+			retainExcludedProjectDeadCodeDiagnostics: input.options.retainExcludedProjectDeadCodeDiagnostics
+		}, {}).pipe(provide(runtimeLayers), provideService(PerFileLintCacheEnabled, false), provideService(SidecarLintCacheEnabled, false), provideService(Console, silentConsole$1))), { signal: input.oxlintRuntime.abortSignal });
+		if (baseOutput.didLintFail || baseOutput.didDeadCodeFail) return null;
+		if (countIncompleteLintFiles(baseOutput.lintPartialFailures) > 0 && hasUnlintedSurvivingBaseFile({
+			baseLintPaths: materializedLintPaths,
+			headFiles: expectedHeadFiles,
+			analyzedBaseFiles: baseOutput.analyzedFiles,
+			renamedFiles: snapshot.renamedFiles
+		})) return null;
+		const hasUnscannedUntrackedSourceFiles = filterSourceFiles(filterPathsOutsideDirectories({
+			rootDirectory: input.directory,
+			relativePaths: snapshot.untrackedFiles,
+			excludedDirectories: input.options.excludedProjectDirectories
+		}).map(toForwardSlashes)).some((filePath) => !analyzedHeadFiles.has(filePath));
+		const diagnosticDelta = computeDiagnosticDelta({
+			headDiagnostics: input.headDiagnostics,
+			renamedFiles: snapshot.renamedFiles ?? {},
+			mapBaseLine: readBaselineLineMap(input.directory, input.baselineRef),
+			baseDiagnostics: withDiagnosticFingerprints(snapshot.tempDirectory, baseOutput.diagnostics),
+			readHeadLine: () => null,
+			readBaseLine: () => null
+		});
+		return {
+			displayDiagnostics: diagnosticDelta.newDiagnostics,
+			baselineDelta: {
+				baseRef: input.baselineRef,
+				source: "base",
+				matchedCount: baseOutput.diagnostics.length - diagnosticDelta.fixedCount,
+				fixedCount: hasUnscannedUntrackedSourceFiles ? 0 : diagnosticDelta.fixedCount,
+				baseTotalCount: baseOutput.diagnostics.length,
+				crossFileMatchCount: diagnosticDelta.crossFileMatchCount,
+				ruleCountMatchCount: diagnosticDelta.ruleCountMatchCount
+			}
+		};
+	} finally {
+		snapshot.cleanup();
+	}
+};
+//#endregion
+//#region src/cli/utils/scan-result-cache-payload.ts
+const decodeDiagnostic = decodeUnknownSync(Diagnostic);
+const isStringArray = (value) => Array.isArray(value) && value.every((entry) => typeof entry === "string");
+const isNullableString = (value) => value === null || typeof value === "string";
+const isBoolean = (value) => typeof value === "boolean";
+const isNumber = (value) => typeof value === "number";
+const isString = (value) => typeof value === "string";
+const isDiagnosticArray = (value) => {
+	if (!Array.isArray(value)) return false;
+	try {
+		for (const entry of value) decodeDiagnostic(entry);
+		return true;
+	} catch {
+		return false;
+	}
+};
+const isScoreResult = (value) => value === null || isRecord(value) && typeof value.score === "number" && typeof value.label === "string";
+const isProjectInfo = (value) => isRecord(value) && typeof value.rootDirectory === "string" && typeof value.projectName === "string" && typeof value.framework === "string" && typeof value.sourceFileCount === "number";
+const isBaselineDelta = (value) => isRecord(value) && typeof value.baseRef === "string" && typeof value.fixedCount === "number" && typeof value.baseTotalCount === "number" && (value.crossFileMatchCount === void 0 || typeof value.crossFileMatchCount === "number");
+const isSuppressedRuleCountArray = (value) => Array.isArray(value) && value.every((entry) => isRecord(entry) && typeof entry.rule === "string" && typeof entry.source === "string" && typeof entry.count === "number");
+const REQUIRED_CACHED_SCAN_PAYLOAD_FIELDS = [
+	{
+		key: "diagnostics",
+		isValid: isDiagnosticArray
+	},
+	{
+		key: "score",
+		isValid: isScoreResult
+	},
+	{
+		key: "project",
+		isValid: isProjectInfo
+	},
+	{
+		key: "userConfig",
+		isValid: (value) => value === null || isRecord(value)
+	},
+	{
+		key: "didLintFail",
+		isValid: isBoolean
+	},
+	{
+		key: "lintFailureReason",
+		isValid: isNullableString
+	},
+	{
+		key: "lintPartialFailures",
+		isValid: isStringArray
+	},
+	{
+		key: "didDeadCodeFail",
+		isValid: isBoolean
+	},
+	{
+		key: "deadCodeFailureReason",
+		isValid: isNullableString
+	},
+	{
+		key: "deadCodeOverlapped",
+		isValid: isBoolean
+	},
+	{
+		key: "directory",
+		isValid: isString
+	},
+	{
+		key: "scannedFileCount",
+		isValid: isNumber
+	},
+	{
+		key: "scannedFilePaths",
+		isValid: isStringArray
+	},
+	{
+		key: "scanElapsedMilliseconds",
+		isValid: isNumber
+	},
+	{
+		key: "lintFailureReasonKind",
+		isValid: isNullableString
+	},
+	{
+		key: "supplyChainOverlapTimedOut",
+		isValid: isBoolean
+	}
+];
+const OPTIONAL_CACHED_SCAN_PAYLOAD_FIELDS = [
+	{
+		key: "analyzedFiles",
+		isValid: isStringArray
+	},
+	{
+		key: "baselineDelta",
+		isValid: isBaselineDelta
+	},
+	{
+		key: "scanConcurrency",
+		isValid: isNumber
+	},
+	{
+		key: "securityScanFailed",
+		isValid: isBoolean
+	},
+	{
+		key: "securityScanFailureReason",
+		isValid: isNullableString
+	},
+	{
+		key: "suppressedRuleCounts",
+		isValid: isSuppressedRuleCountArray
+	},
+	{
+		key: "manifestContentHash",
+		isValid: isNullableString
+	}
+];
+const hasValidRequiredCachedScanPayloadFields = (value) => REQUIRED_CACHED_SCAN_PAYLOAD_FIELDS.every((field) => field.isValid(value[field.key]));
+const hasValidOptionalCachedScanPayloadFields = (value) => OPTIONAL_CACHED_SCAN_PAYLOAD_FIELDS.every((field) => value[field.key] === void 0 || field.isValid(value[field.key]));
+const isCachedScanPayload = (value) => {
+	if (!isRecord(value)) return false;
+	return hasValidRequiredCachedScanPayloadFields(value) && hasValidOptionalCachedScanPayloadFields(value);
+};
+const decodeCachedScanPayload = (value) => isCachedScanPayload(value) ? value : null;
+const shouldStoreScanPayload = (payload) => !payload.didLintFail && !payload.didDeadCodeFail && payload.lintPartialFailures.length === 0 && !payload.supplyChainOverlapTimedOut && payload.securityScanFailed !== true;
+//#endregion
+//#region src/cli/utils/scan-result-cache.ts
+const createScanResultCacheInvocationState = () => ({
+	repositoryIdentityByRoot: /* @__PURE__ */ new Map(),
+	firstProjectIdentity: null
+});
+const TOOLCHAIN_PACKAGE_SPECIFIERS = [
+	"oxlint/package.json",
+	"oxlint-plugin-react-doctor/package.json",
+	"eslint-plugin-react-hooks/package.json"
+];
+const bundledRequire = createRequire(import.meta.url);
+const RULE_PLUGIN_CONTENT_FINGERPRINT = (() => {
+	try {
+		return `oxlint-plugin-react-doctor#fingerprint=${hashFileContents(bundledRequire.resolve("oxlint-plugin-react-doctor")) ?? "unreadable"}`;
+	} catch {
+		return "oxlint-plugin-react-doctor#fingerprint=unresolved";
+	}
+})();
+const normalizeForStableJson = (value) => {
+	if (value === null) return null;
+	if (value === void 0) return void 0;
+	const valueType = typeof value;
+	if (valueType === "string" || valueType === "number" || valueType === "boolean") return value;
+	if (valueType === "bigint" || valueType === "function" || valueType === "symbol") throw new Error("Unsupported cache key value");
+	if (Array.isArray(value)) return value.map((item) => {
+		const normalized = normalizeForStableJson(item);
+		return normalized === void 0 ? null : normalized;
+	});
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null) throw new Error("Unsupported cache key object");
+	if (!isRecord(value)) throw new Error("Unsupported cache key object");
+	const normalizedRecord = {};
+	for (const key of Object.keys(value).sort()) {
+		const normalized = normalizeForStableJson(value[key]);
+		if (normalized !== void 0) normalizedRecord[key] = normalized;
+	}
+	return normalizedRecord;
+};
+const stringifyStableJson = (value) => {
+	try {
+		return JSON.stringify(normalizeForStableJson(value));
+	} catch {
+		return null;
+	}
+};
+const hashString = (value) => crypto.createHash("sha1").update(value).digest("hex");
+const readHeadSha = (projectDirectory) => runGitAsync(projectDirectory, HEAD_SHA_GIT_ARGUMENTS);
+const parseWorktreeStatusRecords = (statusOutput) => {
+	const entries = [];
+	const tokens = statusOutput.split("\0");
+	for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+		let record = tokens[tokenIndex];
+		if (record.length === 0) continue;
+		if (record.length < 3 || record[2] !== " ") {
+			if (tokenIndex !== 0) return null;
+			record = ` ${record}`;
+		}
+		if (record.length < 4 || record[2] !== " ") return null;
+		const statusCode = record.slice(0, 2);
+		const recordPath = record.slice(3);
+		if (statusCode.includes("R") || statusCode.includes("C")) {
+			tokenIndex += 1;
+			const originPath = tokens[tokenIndex];
+			if (originPath === void 0 || originPath.length === 0) return null;
+			entries.push({
+				statusCode,
+				path: recordPath,
+				originPath
+			});
+			continue;
+		}
+		entries.push({
+			statusCode,
+			path: recordPath
+		});
+	}
+	return entries;
+};
+const buildDirtyPathContentFingerprint = (absolutePath, statusCode) => {
+	let stats;
+	try {
+		stats = fs.lstatSync(absolutePath);
+	} catch {
+		return statusCode.includes("D") ? "deleted" : null;
+	}
+	if (stats.isSymbolicLink()) try {
+		return `link:${fs.readlinkSync(absolutePath)}`;
+	} catch {
+		return null;
+	}
+	if (!stats.isFile()) return null;
+	if (stats.size > 10485760) return null;
+	return hashFileContents(absolutePath);
+};
+const buildWorktreeFingerprint = (repositoryRoot, statusOutput) => {
+	if (statusOutput === null) return null;
+	if (statusOutput.length === 0) return [];
+	const statusEntries = parseWorktreeStatusRecords(statusOutput);
+	if (statusEntries === null) return null;
+	if (statusEntries.length > 300) return null;
+	const dirtyEntries = [];
+	for (const statusEntry of statusEntries) {
+		const contentFingerprint = buildDirtyPathContentFingerprint(path.join(repositoryRoot, statusEntry.path), statusEntry.statusCode);
+		if (contentFingerprint === null) return null;
+		dirtyEntries.push({
+			...statusEntry,
+			contentFingerprint
+		});
+	}
+	return dirtyEntries.sort((firstEntry, secondEntry) => {
+		const firstSortKey = `${firstEntry.path}${firstEntry.statusCode}`;
+		const secondSortKey = `${secondEntry.path}${secondEntry.statusCode}`;
+		return firstSortKey < secondSortKey ? -1 : firstSortKey > secondSortKey ? 1 : 0;
+	});
+};
+const resolveIdentityFromProbes = async (repositoryRoot, statusPromise, headShaPromise, invocationState) => {
+	const [statusOutput, headSha] = await Promise.all([statusPromise, headShaPromise]);
+	const worktreeFingerprint = buildWorktreeFingerprint(repositoryRoot, statusOutput);
+	const identity = worktreeFingerprint === null || headSha === null ? null : {
+		headSha,
+		worktreeFingerprint
+	};
+	invocationState.repositoryIdentityByRoot.set(repositoryRoot, identity);
+	return identity;
+};
+const resolveSiblingIdentity = async (projectDirectory, invocationState, repositoryRootPromise, firstProjectIdentity) => {
+	const [repositoryRoot] = await Promise.all([repositoryRootPromise, firstProjectIdentity]);
+	if (repositoryRoot === null) return null;
+	const cachedIdentity = invocationState.repositoryIdentityByRoot.get(repositoryRoot);
+	if (cachedIdentity !== void 0) return cachedIdentity;
+	return resolveIdentityFromProbes(repositoryRoot, runGitAsync(projectDirectory, WORKTREE_STATUS_GIT_ARGUMENTS), readHeadSha(repositoryRoot), invocationState);
+};
+const resolveRepositoryCacheIdentity = (projectDirectory, invocationState, repositoryRootPromise) => {
+	if (invocationState.firstProjectIdentity !== null) return resolveSiblingIdentity(projectDirectory, invocationState, repositoryRootPromise, invocationState.firstProjectIdentity);
+	const speculativeStatus = runGitAsync(projectDirectory, WORKTREE_STATUS_GIT_ARGUMENTS);
+	const speculativeHeadSha = readHeadSha(projectDirectory);
+	invocationState.firstProjectIdentity = repositoryRootPromise.then((repositoryRoot) => repositoryRoot === null ? null : resolveIdentityFromProbes(repositoryRoot, speculativeStatus, speculativeHeadSha, invocationState));
+	return invocationState.firstProjectIdentity;
+};
+const DOTENV_FILE_NAME_PATTERN = /^\.env(\.|$)/;
+const resolveDotenvFingerprint = (projectDirectory) => {
+	try {
+		return fs.readdirSync(projectDirectory).filter((entryName) => DOTENV_FILE_NAME_PATTERN.test(entryName)).sort().map((entryName) => `${entryName}=${hashFileContents(path.join(projectDirectory, entryName)) ?? "unreadable"}`);
+	} catch {
+		return [];
+	}
+};
+const isGitIdentityTrustworthy = async (projectDirectory) => {
+	const output = await runGitAsync(projectDirectory, TRACKED_FILE_FLAGS_GIT_ARGUMENTS);
+	if (output === null) return false;
+	const entryLines = output.split("\n").filter((line) => line.length > 0);
+	return entryLines.length > 0 && entryLines.every((line) => line[0] === "H");
+};
+const resolveCacheFilePath = (projectDirectory) => path.join(resolveReactDoctorCacheDir(projectDirectory), SCAN_RESULT_CACHE_FILENAME);
+const readPersistedCache = (cacheFilePath) => {
+	try {
+		const parsed = JSON.parse(fs.readFileSync(cacheFilePath, "utf8"));
+		if (!isRecord(parsed) || parsed.version !== 8) return {
+			version: 8,
+			entries: []
+		};
+		if (!Array.isArray(parsed.entries)) return {
+			version: 8,
+			entries: []
+		};
+		const entries = [];
+		for (const entry of parsed.entries) {
+			if (!isRecord(entry) || typeof entry.key !== "string" || typeof entry.createdAtMs !== "number") continue;
+			const payload = decodeCachedScanPayload(entry.payload);
+			if (payload === null) continue;
+			entries.push({
+				key: entry.key,
+				createdAtMs: entry.createdAtMs,
+				payload
+			});
+		}
+		return {
+			version: 8,
+			entries
+		};
+	} catch {
+		return {
+			version: 8,
+			entries: []
+		};
+	}
+};
+/**
+* The global cache off-switch (`REACT_DOCTOR_NO_CACHE`), which disables every
+* cache subsystem: this whole-repo scan cache plus core's per-file lint,
+* sidecar caches (their `Context.Reference` defaults read the
+* same variable). Exported for the wide event's `cache.temperature`
+* derivation, which reports `"disabled"` instead of `"cold"` when the switch
+* is on. Granular knobs (`REACT_DOCTOR_NO_FILE_CACHE`, …) are deliberately
+* not consulted — they leave the other subsystems live.
+*/
+const resolveProjectIdentity = (projectDirectory) => {
+	try {
+		return fs.realpathSync.native(projectDirectory);
+	} catch {
+		return path.resolve(projectDirectory);
+	}
+};
+const resolveManifestContentHash = (projectDirectory) => hashFileContents(getPackageJsonPath(projectDirectory));
+const fileFingerprint = (filePath) => {
+	try {
+		const stat = fs.statSync(filePath);
+		return `${filePath}:${stat.mtimeMs}:${stat.size}`;
+	} catch {
+		return null;
+	}
+};
+const resolveScanResultToolchainFingerprint = (nodeBinaryPath) => {
+	const fingerprints = [];
+	if (nodeBinaryPath !== null) fingerprints.push(nodeBinaryPath === process.execPath ? `node=${process.version}` : `node=${fileFingerprint(nodeBinaryPath) ?? "unreadable"}`);
+	for (const specifier of TOOLCHAIN_PACKAGE_SPECIFIERS) try {
+		const packageJson = bundledRequire(specifier);
+		const version = typeof packageJson.version === "string" ? packageJson.version : "unknown";
+		fingerprints.push(`${specifier}=${version}`);
+	} catch {
+		fingerprints.push(`${specifier}=missing`);
+	}
+	fingerprints.push(RULE_PLUGIN_CONTENT_FINGERPRINT);
+	return fingerprints;
+};
+const buildScanResultCacheKey = async (input) => {
+	if (isCacheGloballyDisabled() || input.options.baselineReport) return null;
+	const isTrustworthyPromise = isGitIdentityTrustworthy(input.projectDirectory);
+	const repositoryIdentityPromise = resolveRepositoryCacheIdentity(input.projectDirectory, input.invocationState, runGitAsync(input.projectDirectory, REPOSITORY_ROOT_GIT_ARGUMENTS));
+	const [isTrustworthy, repositoryIdentity] = await Promise.all([isTrustworthyPromise, repositoryIdentityPromise]);
+	if (!isTrustworthy || repositoryIdentity === null) return null;
+	if (stringifyStableJson(input.userConfig) === null) return null;
+	const cacheKeyJson = stringifyStableJson({
+		schemaVersion: 8,
+		projectIdentity: resolveProjectIdentity(input.projectDirectory),
+		headSha: repositoryIdentity.headSha,
+		worktreeFingerprint: repositoryIdentity.worktreeFingerprint,
+		dotenvFingerprint: resolveDotenvFingerprint(input.projectDirectory),
+		reactDoctorVersion: input.version,
+		nodeVersion: process.version,
+		toolchainFingerprint: resolveScanResultToolchainFingerprint(input.nodeBinaryPath),
+		configFingerprint: computeConfigFingerprint(input.projectDirectory, input.version),
+		hasConfigOverride: input.hasConfigOverride,
+		configSourceDirectory: input.configSourceDirectory,
+		userConfig: input.userConfig,
+		engineOptions: {
+			lint: input.options.lint,
+			deadCode: input.options.deadCode,
+			supplyChain: input.options.supplyChain,
+			includePaths: [...input.options.includePaths].sort(),
+			excludedProjectDirectories: [...input.options.excludedProjectDirectories ?? []].sort(),
+			retainExcludedProjectDeadCodeDiagnostics: input.options.retainExcludedProjectDeadCodeDiagnostics ?? false,
+			customRulesOnly: input.options.customRulesOnly,
+			respectInlineDisables: input.options.respectInlineDisables,
+			warnings: input.options.warnings,
+			adoptExistingLintConfig: input.options.adoptExistingLintConfig,
+			ignoredTags: [...input.options.ignoredTags].sort(),
+			includedTags: [...input.options.includedTags].sort(),
+			includeTagDefaults: input.options.includeTagDefaults,
+			concurrency: input.options.concurrency,
+			lintBatchOrdering: resolveLintBatchOrdering(),
+			baselineRef: input.options.baseline?.ref,
+			changedLineRanges: input.options.changedLineRanges ?? void 0,
+			contextual: input.options.contextual ?? false,
+			noScore: input.options.noScore,
+			isCi: input.options.isCi,
+			suppressRendering: input.options.suppressRendering,
+			supplyChainManifestChanged: input.options.supplyChainManifestChanged
+		}
+	});
+	return cacheKeyJson === null ? null : hashString(cacheKeyJson);
+};
+const createScanResultCache = (projectDirectory) => {
+	const cacheFilePath = resolveCacheFilePath(projectDirectory);
+	const persistedCache = readPersistedCache(cacheFilePath);
+	const entries = /* @__PURE__ */ new Map();
+	for (const entry of persistedCache.entries) entries.set(entry.key, entry);
+	const persist = () => {
+		const mergedEntries = /* @__PURE__ */ new Map();
+		for (const entry of readPersistedCache(cacheFilePath).entries) mergedEntries.set(entry.key, entry);
+		for (const entry of entries.values()) mergedEntries.set(entry.key, entry);
+		atomicWriteJson(cacheFilePath, {
+			version: 8,
+			entries: [...mergedEntries.values()].sort((firstEntry, secondEntry) => secondEntry.createdAtMs - firstEntry.createdAtMs).slice(0, 20)
+		});
+	};
+	return {
+		lookup: (key) => {
+			const payload = entries.get(key)?.payload;
+			if (payload === void 0) return null;
+			return resolveProjectIdentity(payload.directory) === resolveProjectIdentity(projectDirectory) && (payload.manifestContentHash ?? null) === resolveManifestContentHash(projectDirectory) ? payload : null;
+		},
+		store: (key, payload) => {
+			entries.set(key, {
+				key,
+				createdAtMs: Date.now(),
+				payload: {
+					...payload,
+					manifestContentHash: resolveManifestContentHash(projectDirectory)
+				}
+			});
+			persist();
+		}
+	};
+};
+//#endregion
+//#region src/cli/utils/scan-result-cache-lifecycle.ts
+const createScanResultCacheLifecycle = async (input) => {
+	const cacheKey = await buildScanResultCacheKey({
+		projectDirectory: input.directory,
+		version: VERSION,
+		nodeBinaryPath: input.resolvedNodeBinaryPath,
+		options: input.options,
+		userConfig: input.userConfig,
+		hasConfigOverride: input.hasConfigOverride,
+		configSourceDirectory: input.configSourceDirectory,
+		invocationState: input.invocationState
+	});
+	const scanResultCache = cacheKey === null ? null : createScanResultCache(input.directory);
+	const cachedPayload = cacheKey === null || scanResultCache === null ? null : scanResultCache.lookup(cacheKey);
+	return {
+		replay: () => {
+			if (cachedPayload === null) return null;
+			recordSentryProjectContext(cachedPayload.project, input.rootSpan, { concurrentScan: input.options.concurrentScan });
+			recordCount(METRIC.projectDetected, 1);
+			const isDiffMode = input.options.includePaths.length > 0;
+			const baselineDegraded = (Boolean(input.options.baselineReport) || Boolean(input.options.baseline) && isDiffMode) && cachedPayload.baselineDelta === void 0;
+			return renderAndRecordScan({
+				payload: cachedPayload,
+				options: input.options,
+				startTime: input.startTime,
+				rootSpan: input.rootSpan,
+				scanMode: cachedPayload.baselineDelta ? "baseline" : isDiffMode ? "diff" : "full",
+				baselineDegraded,
+				wholeRepoCacheHit: true
+			});
+		},
+		complete: (completion) => {
+			if (cacheKey !== null && scanResultCache !== null && shouldStoreScanPayload(completion.payload) && !completion.baselineDegraded) scanResultCache.store(cacheKey, completion.payload);
+			return renderAndRecordScan({
+				payload: completion.payload,
+				options: input.options,
+				startTime: input.startTime,
+				rootSpan: input.rootSpan,
+				scanMode: completion.scanMode,
+				baselineDegraded: completion.baselineDegraded,
+				wholeRepoCacheHit: false,
+				cacheStats: completion.cacheStats
+			});
+		}
+	};
+};
+//#endregion
+//#region src/inspect.ts
+const silentConsole = makeNoopConsole();
+const inspectWithOxlintRuntime = async (directory, inputOptions, oxlintRuntime) => {
+	const startTime = performance.now();
+	const deadlineEpochMs = inputOptions.deadlineEpochMs ?? (inputOptions.maxDurationMs != null ? Date.now() + inputOptions.maxDurationMs : null);
+	const isConcurrentScan = inputOptions.concurrentScan === true;
+	if (!isConcurrentScan) resetSentryRunState();
+	const configOverride = inputOptions.configOverride;
+	const hasConfigOverride = configOverride !== void 0;
+	let scanDirectory;
+	let userConfig;
+	let configSourceDirectory;
+	if (hasConfigOverride) {
+		scanDirectory = directory;
+		userConfig = configOverride;
+		configSourceDirectory = inputOptions.configSourceDirectory ?? null;
+	} else {
+		const scanTarget = await resolveScanTarget(directory);
+		scanDirectory = scanTarget.resolvedDirectory;
+		userConfig = scanTarget.userConfig;
+		configSourceDirectory = scanTarget.configSourceDirectory;
+	}
+	const options = resolveInspectOptions(path$1.resolve(directory) === path$1.resolve(scanDirectory) ? inputOptions : {
+		...inputOptions,
+		precomputedSourceFiles: void 0
+	}, userConfig);
+	const sourceFilterConfigHash = computeSourceFilterConfigHash({
+		userConfig,
+		respectInlineDisables: options.respectInlineDisables
+	});
+	if (options.baselineReport && (options.baselineReport.sourceFilterConfigHash !== void 0 || options.baselineReport.diagnostics.length > 0) && options.baselineReport.sourceFilterConfigHash !== sourceFilterConfigHash) throw new CliInputError("The baseline uses different or unknown source-dependent filters. Regenerate the base --json report with the current textComponents, rawTextWrapperComponents, and respectInlineDisables settings, or use --scope changed --base <ref>.");
+	const ownsSpinnerSilence = options.silent && !isConcurrentScan;
+	const wasSpinnerSilent = isSpinnerSilent();
+	if (ownsSpinnerSilence) setSpinnerSilent(true);
+	try {
+		const result = await withRunSpan(async (rootSpan) => {
+			try {
+				return await runInspectWithRuntime(scanDirectory, options, userConfig, hasConfigOverride, configSourceDirectory, startTime, deadlineEpochMs, rootSpan, oxlintRuntime);
+			} catch (error) {
+				recordRunEvent(rootSpan, {
+					...buildRunEventConfig(options, userConfig),
+					mode: options.includePaths.length > 0 ? "diff" : "full",
+					error
+				});
+				throw error;
+			}
+		}, { concurrentScan: isConcurrentScan });
+		if (!isConcurrentScan) resetSentryRunState();
+		return {
+			...result,
+			sourceFilterConfigHash
+		};
+	} finally {
+		if (ownsSpinnerSilence) setSpinnerSilent(wasSpinnerSilent);
+	}
+};
+const createInvocationInspect = (requestedOxlintConcurrency) => {
+	const concurrency = resolveInvocationOxlintConcurrency(requestedOxlintConcurrency);
+	const spawnSlots = createOxlintSpawnSlots(concurrency);
+	const scanResultCacheInvocationState = createScanResultCacheInvocationState();
+	const invocationCaches = createInvocationCaches();
+	return async (directory, inputOptions = {}) => {
+		const abortController = new AbortController();
+		const unregisterAbortController = activeScanAbortRegistry.register(abortController);
+		try {
+			return await inspectWithOxlintRuntime(directory, inputOptions, {
+				concurrency,
+				spawnSlots,
+				abortSignal: abortController.signal,
+				scanResultCacheInvocationState,
+				invocationCaches
+			});
+		} finally {
+			unregisterAbortController();
+		}
+	};
+};
+const inspect = async (directory, inputOptions = {}) => createInvocationInspect(inputOptions.concurrency)(directory, inputOptions);
+const runInspectWithRuntime = async (directory, options, userConfig, hasConfigOverride, configSourceDirectory, startTime, deadlineEpochMs, rootSpan, oxlintRuntime) => {
+	const isDiffMode = options.includePaths.length > 0;
+	const resolvedNodeBinaryPath = await resolveOxlintNode(options.lint, options.scoreOnly || options.silent);
+	const lintBindingMissing = options.lint && !resolvedNodeBinaryPath;
+	await yieldToEventLoop();
+	const scanResultCacheLifecycle = await createScanResultCacheLifecycle({
+		directory,
+		options,
+		userConfig,
+		hasConfigOverride,
+		configSourceDirectory,
+		resolvedNodeBinaryPath,
+		invocationState: oxlintRuntime.scanResultCacheInvocationState,
+		startTime,
+		rootSpan
+	});
+	const cachedResult = scanResultCacheLifecycle.replay();
+	if (cachedResult !== null) return cachedResult;
+	if (options.lint && resolvedNodeBinaryPath) warmOxlintWorkerPool(resolvedNodeBinaryPath, oxlintRuntime.concurrency);
+	if (options.deadCode && shouldUseMaintainabilityLayer({
+		shouldRunDuplicateJsx: options.deadCode,
+		userConfig
+	})) warmDuplicateJsxWorker();
+	const shouldShowProgressSpinners = !options.isCiOrCodingAgentEnvironment && !options.silent && !options.scoreOnly && !options.suppressRendering && options.lint && Boolean(resolvedNodeBinaryPath);
+	const layers = buildRuntimeLayers({
+		directory,
+		hasConfigOverride,
+		userConfig,
+		configSourceDirectory,
+		shouldSkipLint: !options.lint || lintBindingMissing,
+		shouldRunDeadCode: options.deadCode,
+		shouldRunSupplyChain: options.supplyChain,
+		shouldComputeScore: !options.noScore,
+		shouldShowProgressSpinners,
+		oxlintConcurrency: oxlintRuntime.concurrency,
+		oxlintSpawnSlots: oxlintRuntime.spawnSlots,
+		invocationCaches: oxlintRuntime.invocationCaches,
+		reporterLayer: options.uiLayers?.reporter,
+		progressLayer: options.uiLayers?.progress
+	});
+	const program = runInspect({
+		directory,
+		precomputedSourceFileCount: options.precomputedSourceFileCount,
+		precomputedSourceFiles: options.precomputedSourceFiles,
+		includePaths: options.includePaths,
+		changedLineRanges: options.changedLineRanges ?? void 0,
+		customRulesOnly: options.customRulesOnly,
+		respectInlineDisables: options.respectInlineDisables,
+		warnings: options.warnings,
+		adoptExistingLintConfig: options.adoptExistingLintConfig,
+		ignoredTags: options.ignoredTags,
+		includedTags: options.includedTags,
+		includeTagDefaults: options.includeTagDefaults,
+		nodeBinaryPath: resolvedNodeBinaryPath ?? void 0,
+		runDeadCode: options.deadCode,
+		isCi: options.isCi,
+		doctorVersion: VERSION,
+		runId: getRunId(),
+		resolveLocalGithubViewerPermission: !options.noScore,
+		suppressScanSummary: options.suppressRendering,
+		supplyChainManifestChanged: options.supplyChainManifestChanged,
+		deadlineEpochMs: deadlineEpochMs ?? void 0,
+		signal: oxlintRuntime.abortSignal,
+		excludedProjectDirectories: options.excludedProjectDirectories,
+		retainExcludedProjectDeadCodeDiagnostics: options.retainExcludedProjectDeadCodeDiagnostics
+	}, { beforeLint: (projectInfo) => sync(() => {
+		recordSentryProjectContext(projectInfo, rootSpan, { concurrentScan: options.concurrentScan });
+		recordCount(METRIC.projectDetected, 1);
+	}) });
+	const output = await runPromise(restoreLegacyThrow(applyObservability(options.silent ? program.pipe(provide(layers), provideService(Console, silentConsole)) : program.pipe(provide(layers)), rootSpan)), { signal: oxlintRuntime.abortSignal });
+	const didLintFail = lintBindingMissing || output.didLintFail;
+	const lintFailureReason = lintBindingMissing ? `oxlint native binding not found for Node ${process.version}; expected one matching ${OXLINT_NODE_REQUIREMENT}` : output.lintFailureReason;
+	if (!options.scoreOnly && !options.uiLayers && !lintBindingMissing && output.didLintFail && lintFailureReason !== null) if (output.lintFailureReasonKind === "native-binding-missing") runSync(log(highlighter.gray(`  Upgrade to Node ${OXLINT_NODE_REQUIREMENT} or run: npx -p oxlint@latest react-doctor@latest`)));
+	else runSync(error(highlighter.error(lintFailureReason)));
+	const headDiagnostics = withDiagnosticFingerprints(directory, output.diagnostics);
+	let inspectDiagnostics = headDiagnostics;
+	let baselineDelta;
+	if (options.baselineReport && !didLintFail && !output.didDeadCodeFail && countIncompleteLintFiles(output.lintPartialFailures) === 0) {
+		const baseDiagnostics = mergeAndFilterDiagnostics(options.baselineReport.diagnostics.filter((diagnostic) => {
+			const metadata = getRuleMetadata(diagnostic.plugin, diagnostic.rule);
+			if (!metadata) return true;
+			if (metadata.tags.some((tag) => options.ignoredTags.has(tag))) return false;
+			return options.includedTags.size === 0 || metadata.tags.some((tag) => options.includedTags.has(tag));
+		}), directory, userConfig, () => null, {
+			respectInlineDisables: false,
+			warnings: options.warnings
+		});
+		const delta = computeDiagnosticDelta({
+			headDiagnostics,
+			baseDiagnostics,
+			renamedFiles: options.baselineReport.renamedFiles ?? {},
+			mapBaseLine: readBaselineLineMap(directory, options.baselineReport.sourceRevision),
+			readHeadLine: () => null,
+			readBaseLine: () => null
+		});
+		inspectDiagnostics = delta.newDiagnostics;
+		baselineDelta = {
+			baseRef: options.baselineReport.file,
+			source: "baseline",
+			baselineFile: options.baselineReport.file,
+			matchedCount: baseDiagnostics.length - delta.fixedCount,
+			baseTotalCount: baseDiagnostics.length,
+			fixedCount: delta.fixedCount,
+			crossFileMatchCount: delta.crossFileMatchCount,
+			ruleCountMatchCount: delta.ruleCountMatchCount
+		};
+	} else if (options.baseline && isDiffMode && !didLintFail && !output.didDeadCodeFail && countIncompleteLintFiles(output.lintPartialFailures) === 0) {
+		const comparison = await runBaselineComparison({
+			directory,
+			options,
+			userConfig,
+			configSourceDirectory,
+			headProjectInfo: output.project,
+			headDiagnostics,
+			resolvedNodeBinaryPath,
+			baselineRef: options.baseline.ref,
+			baseFiles: options.baseline.baseFiles,
+			headFiles: options.baseline.headFiles,
+			headAnalyzedFiles: output.analyzedFiles,
+			deadlineEpochMs,
+			oxlintRuntime
+		});
+		if (comparison) {
+			inspectDiagnostics = comparison.displayDiagnostics;
+			baselineDelta = comparison.baselineDelta;
+		}
+	} else if (options.changedLineRanges !== null && isDiffMode) inspectDiagnostics = filterDiagnosticsByChangedLines({
+		directory,
+		diagnostics: headDiagnostics,
+		contextual: options.contextual,
+		changedLineRanges: options.changedLineRanges
+	});
+	const baselineDegraded = (Boolean(options.baselineReport) || Boolean(options.baseline) && isDiffMode) && baselineDelta === void 0;
+	const score = didLintFail ? null : output.score;
+	const payload = {
+		diagnostics: inspectDiagnostics,
+		score,
+		project: output.project,
+		userConfig: output.userConfig,
+		didLintFail,
+		lintFailureReason,
+		lintPartialFailures: output.lintPartialFailures,
+		didDeadCodeFail: output.didDeadCodeFail,
+		deadCodeFailureReason: output.deadCodeFailureReason,
+		deadCodeOverlapped: output.deadCodeOverlapped,
+		directory: output.resolvedDirectory,
+		scannedFileCount: output.scannedFileCount,
+		scannedFilePaths: output.scannedFilePaths,
+		analyzedFiles: output.analyzedFiles,
+		scanElapsedMilliseconds: output.scanElapsedMilliseconds,
+		scanConcurrency: output.scanConcurrency,
+		baselineDelta,
+		lintFailureReasonKind: lintBindingMissing ? "native-binding-missing" : output.lintFailureReasonKind,
+		supplyChainOverlapTimedOut: output.supplyChainOverlapTimedOut,
+		securityScanFailed: output.securityScanFailed,
+		securityScanFailureReason: output.securityScanFailureReason,
+		suppressedRuleCounts: output.suppressedRuleCounts
+	};
+	return scanResultCacheLifecycle.complete({
+		payload,
+		scanMode: baselineDelta ? "baseline" : isDiffMode ? "diff" : "full",
+		baselineDegraded,
+		cacheStats: {
+			lintCacheHitFileCount: output.lintCacheHitFileCount,
+			lintCacheTotalFileCount: output.lintCacheTotalFileCount,
+			lintSidecarReplayedFileCount: output.lintSidecarReplayedFileCount,
+			lintSidecarTotalFileCount: output.lintSidecarTotalFileCount,
+			deadCodeCacheHit: output.deadCodeCacheHit,
+			deadCodeSummaryCacheHits: output.deadCodeSummaryCacheHits,
+			deadCodeSummaryCacheMisses: output.deadCodeSummaryCacheMisses
+		}
+	});
+};
+//#endregion
+//#region src/cli/utils/deduplicate-project-scans.ts
+const deduplicateProjectScans = (projectScans) => {
+	const uniqueProjectScans = [];
+	const seenDirectories = /* @__PURE__ */ new Set();
+	for (const projectScan of projectScans) {
+		if (seenDirectories.has(projectScan.directory)) continue;
+		seenDirectories.add(projectScan.directory);
+		uniqueProjectScans.push(projectScan);
+	}
+	return uniqueProjectScans;
+};
+//#endregion
+//#region src/cli/utils/collect-project-source-files.ts
+const collectProjectSourceFiles = async (rootDirectory, projectDirectories) => {
+	const abortController = new AbortController();
+	const unregisterAbortController = activeScanAbortRegistry.register(abortController);
+	try {
+		return await collectSourceFilesByDirectory(rootDirectory, projectDirectories, abortController.signal);
+	} finally {
+		unregisterAbortController();
+	}
+};
+//#endregion
+//#region src/cli/utils/build-handoff-payload.ts
+const buildHandoffPayload = (input) => {
+	const topGroups = buildSortedRuleGroups(input.diagnostics).slice(0, 3);
+	const migrationScaleBuckets = new Map(findMigrationScaleBuckets(input.diagnostics).map((bucket) => [bucket.ruleKey, bucket]));
+	let outputDirectory = null;
+	try {
+		outputDirectory = writeDiagnosticsDirectory([...input.diagnostics], input.outputDirectory);
+	} catch {}
+	const lines = [`Review and fix the top ${topGroups.length} React Doctor ${topGroups.length === 1 ? "finding" : "findings"} in ${input.projectName}. Leave the rest for a follow-up.`, ""];
+	topGroups.forEach(([ruleKey, ruleDiagnostics], index) => {
+		const representative = ruleDiagnostics[0];
+		const severityLabel = representative.severity === "error" ? "ERROR" : "WARN";
+		const sharedFixSiteCount = getSharedFixSiteCount(ruleDiagnostics);
+		const countBadge = sharedFixSiteCount > 0 ? `one fix · ${sharedFixSiteCount} sites` : `×${ruleDiagnostics.length}`;
+		lines.push(`${index + 1}. ${severityLabel} ${representative.category}: ${representative.title ?? ruleKey} (${countBadge})`, `   ${representative.message}`);
+		const fixRecipeLine = formatFixRecipeLine(representative);
+		if (fixRecipeLine) lines.push(`   ${fixRecipeLine}`);
+		const uniqueFiles = [...new Set(ruleDiagnostics.map((diagnostic) => diagnostic.filePath))];
+		for (const filePath of uniqueFiles.slice(0, 3)) {
+			const firstSite = ruleDiagnostics.find((diagnostic) => diagnostic.filePath === filePath && diagnostic.line > 0);
+			lines.push(`   - ${filePath}${firstSite ? `:${firstSite.line}` : ""}`);
+		}
+		const remainingFiles = uniqueFiles.length - 3;
+		if (remainingFiles > 0) lines.push(`   - +${remainingFiles} more files`);
+		const migrationBucket = migrationScaleBuckets.get(ruleKey);
+		if (migrationBucket) lines.push(`   Migration-scale (${migrationBucket.fileCount} files): fix a representative sample, confirm the recipe holds, and get the code owner's sign-off before changing the rest in one pass.`);
+	});
+	lines.push("");
+	if (outputDirectory) lines.push(`Full results for all ${input.diagnostics.length} issues (diagnostics.json + a .txt per rule): ${outputDirectory}`, "");
+	lines.push("Read each file and fix the root cause — don't suppress or silence the rule.", "", "Findings that share a `fixGroupId` (in diagnostics.json) are one root cause — a single fix clears all of them, so treat each `fixGroupId` as ONE task, not one per site.", "", "Verify against the real thing, don't assume: confirm each change matches the canonical fix recipe you fetched for that rule, then re-run `npx react-doctor@latest --verbose` and check the issue is actually gone against the real tool before moving on.", "", "Teach me as you go: for every issue you touch, explain it in plain language (no jargon) — what the problem is, why it's a problem, and how serious it is in human terms. Describe the real-world impact and severity concretely (e.g. \"this crashes the page for users on Safari\" vs. \"this is a minor cleanup with no user impact\") so I understand why it matters, not just what changed.", "");
+	const shownRuleKeys = new Set(topGroups.map(([ruleKey]) => ruleKey));
+	const deferredMigrationBuckets = [...migrationScaleBuckets.values()].filter((bucket) => !shownRuleKeys.has(bucket.ruleKey));
+	if (deferredMigrationBuckets.length > 0) {
+		const ruleSummaries = deferredMigrationBuckets.map((bucket) => `${bucket.title} (${bucket.fileCount} files)`).join(", ");
+		lines.push(`Some of the rest are migration-scale (span dozens of files): ${ruleSummaries}. For each, fix a representative sample, confirm the recipe holds, and get the code owner's sign-off before changing the rest in one pass.`, "");
+	}
+	lines.push("Stop after this pass. Summarize the remaining findings for a follow-up.");
+	return lines.join("\n");
+};
+//#endregion
+//#region src/cli/utils/launch-agent.ts
+const isWindows = process.platform === "win32";
+const CLI_AGENT_IDS = [
+	"claude-code",
+	"codex",
+	"cursor"
+];
+const CLI_AGENT_BINARIES = {
+	"claude-code": "claude",
+	codex: "codex",
+	cursor: "cursor-agent"
+};
+const CLI_AGENT_AUTO_FLAGS = {
+	"claude-code": ["--dangerously-skip-permissions"],
+	codex: ["--yolo"],
+	cursor: ["--force"]
+};
+const resolveCursorBundledNode = () => {
+	if (!isWindows) return null;
+	const localAppData = process.env.LOCALAPPDATA;
+	if (!localAppData) return null;
+	const cursorAgentRoot = path$1.join(localAppData, "cursor-agent", "versions");
+	try {
+		const versions = fs$2.readdirSync(cursorAgentRoot);
+		if (versions.length === 0) return null;
+		const sortedVersions = versions.sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
+		for (const version of sortedVersions) try {
+			const bundledNodePath = path$1.join(cursorAgentRoot, version, "node.exe");
+			const entryScriptPath = path$1.join(cursorAgentRoot, version, "index.js");
+			if (fs$2.statSync(bundledNodePath).isFile() && fs$2.statSync(entryScriptPath).isFile()) return {
+				command: bundledNodePath,
+				args: [entryScriptPath]
+			};
+		} catch {}
+	} catch {}
+	return null;
+};
+const resolveWindowsCmdEntryScript = (command) => {
+	if (!isWindows) return null;
+	const pathDirectories = (process.env.PATH ?? "").split(path$1.delimiter).filter(Boolean);
+	for (const directory of pathDirectories) {
+		const cmdFilePath = path$1.join(directory, `${command}.cmd`);
+		try {
+			if (!fs$2.statSync(cmdFilePath).isFile()) continue;
+		} catch {
+			continue;
+		}
+		try {
+			const entryScriptMatch = fs$2.readFileSync(cmdFilePath, "utf8").match(/"%(?:~dp0|dp0%)\\([^"]+\.(?:m?js|cjs))"/);
+			if (!entryScriptMatch) continue;
+			const resolvedScriptPath = path$1.resolve(directory, entryScriptMatch[1]);
+			if (fs$2.statSync(resolvedScriptPath).isFile()) return resolvedScriptPath;
+		} catch {}
+	}
+	return null;
+};
+const spawnAgent = (command, args, cwd) => new Promise((resolve, reject) => {
+	const child = spawn(command, [...args], {
+		cwd,
+		stdio: "inherit"
+	});
+	child.on("error", reject);
+	child.on("close", (code) => resolve(code ?? 0));
+});
+const launchCliAgent = async (agentId, prompt, cwd) => {
+	const binary = CLI_AGENT_BINARIES[agentId];
+	const agentArgs = [...CLI_AGENT_AUTO_FLAGS[agentId], prompt];
+	if (isWindows) {
+		if (agentId === "cursor") {
+			const cursorResolution = resolveCursorBundledNode();
+			if (cursorResolution) return spawnAgent(cursorResolution.command, [...cursorResolution.args, ...agentArgs], cwd);
+		}
+		const entryScript = resolveWindowsCmdEntryScript(binary);
+		if (entryScript) return spawnAgent(process.execPath, [entryScript, ...agentArgs], cwd);
+	}
+	try {
+		return await spawnAgent(binary, agentArgs, cwd);
+	} catch {
+		throw new Error(`Failed to launch ${binary}`);
+	}
+};
+const CLIPBOARD_COMMANDS = [
+	{
+		binary: "pbcopy",
+		args: []
+	},
+	{
+		binary: "wl-copy",
+		args: []
+	},
+	{
+		binary: "xclip",
+		args: ["-selection", "clipboard"]
+	},
+	{
+		binary: "xsel",
+		args: ["--clipboard", "--input"]
+	},
+	{
+		binary: "clip",
+		args: []
+	}
+];
+const copyToClipboard = (text) => {
+	const command = CLIPBOARD_COMMANDS.find((candidate) => isCommandAvailable(candidate.binary));
+	if (!command) return Promise.resolve(false);
+	return new Promise((resolve) => {
+		const child = spawn(command.binary, command.args);
+		child.on("error", () => resolve(false));
+		child.on("close", (code) => resolve(code === 0));
+		child.stdin.on("error", () => resolve(false));
+		child.stdin.end(text);
+	});
+};
+//#endregion
+//#region src/cli/utils/detect-launchable-agents.ts
+const detectLaunchableAgents = async () => {
+	const detected = new Set(await detectAvailableAgents());
+	return CLI_AGENT_IDS.filter((agentId) => detected.has(agentId) && isCommandAvailable(CLI_AGENT_BINARIES[agentId]));
+};
+//#endregion
+//#region src/cli/utils/set-up-github-actions.ts
+const setUpGitHubActions = async (options) => {
+	const projectRoot = findNearestPackageDirectory(options.rootDirectory) ?? options.rootDirectory;
+	try {
+		installReactDoctorScriptStep(projectRoot);
+	} catch {}
+	const workflowSpinner = spinner("Adding GitHub Actions workflow...").start();
+	const defaultBranch = await detectDefaultBranch(projectRoot) ?? "main";
+	const workflowResult = installReactDoctorWorkflow(projectRoot, defaultBranch);
+	const didCreateWorkflow = reportWorkflowResult(workflowSpinner, workflowResult, projectRoot);
+	cliLogger.break();
+	if (workflowResult.status === "failed") {
+		cliLogger.log(`  Couldn't set up GitHub Actions automatically. Follow the guide at ${highlighter.info(CI_URL)}`);
+		return false;
+	}
+	if (workflowResult.status === "created") {
+		const pullRequestSpinner = spinner("Opening a pull request for review...").start();
+		const pullRequestResult = await openWorkflowPullRequest({
+			workflowPath: workflowResult.workflowPath,
+			baseBranch: defaultBranch
+		});
+		if (pullRequestResult.status === "pr-opened") pullRequestSpinner.succeed(`Opened pull request for review: ${highlighter.info(pullRequestResult.url)}`);
+		else if (pullRequestResult.status === "pr-exists") pullRequestSpinner.succeed(`A React Doctor setup pull request is already open: ${highlighter.info(pullRequestResult.url)}`);
+		else if (pullRequestResult.status === "branch-pushed") pullRequestSpinner.warn(`Pushed branch ${highlighter.bold(pullRequestResult.branch)} but couldn't open a PR. Open one with: gh pr create --head ${pullRequestResult.branch}`);
+		else {
+			pullRequestSpinner.stop();
+			const didStage = await stageWorkflowFile({ workflowPath: workflowResult.workflowPath });
+			cliLogger.log(didStage ? `  Staged the workflow file. Commit it to start scanning every pull request.` : "  React Doctor will now scan every new pull request automatically.");
+		}
+	}
+	cliLogger.log(`  Learn more: ${highlighter.info(CI_URL)}`);
+	return didCreateWorkflow;
+};
+//#endregion
+//#region src/cli/utils/count-unique-scanned-files.ts
+const countUniqueScannedFiles = (results) => {
+	const uniqueScannedFilePaths = /* @__PURE__ */ new Set();
+	let fileCountFromScansWithoutPaths = 0;
+	for (const result of results) {
+		const scannedFilePaths = result.scannedFilePaths;
+		if (scannedFilePaths && scannedFilePaths.length > 0) for (const filePath of scannedFilePaths) uniqueScannedFilePaths.add(filePath);
+		else fileCountFromScansWithoutPaths += result.scannedFileCount ?? result.project.sourceFileCount;
+	}
+	return uniqueScannedFilePaths.size + fileCountFromScansWithoutPaths;
+};
+//#endregion
+//#region src/cli/utils/filter-scans-for-surface.ts
+const filterScansForSurface = (completedScans, surface) => completedScans.flatMap((scan) => filterDiagnosticsForSurface([...scan.result.diagnostics], surface, scan.config));
+//#endregion
+//#region src/cli/utils/resolve-max-duration-flag.ts
+const resolveMaxDurationFlag = (maxDuration) => {
+	if (maxDuration === void 0) return void 0;
+	const seconds = Number(maxDuration);
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		cliLogger.warn(`Invalid --max-duration "${maxDuration}". Expected a positive number of seconds; running without a budget.`);
+		return;
+	}
+	return seconds * MILLISECONDS_PER_SECOND;
+};
+//#endregion
+//#region src/cli/utils/resolve-parallel-flag.ts
+/**
+* Maps the `--no-parallel` flag to an `InspectOptions.concurrency` value.
+* `--no-parallel` (`parallel === false`) pins serial, overriding any
+* env-enabled default; otherwise `undefined` defers to the ambient
+* `OxlintConcurrency` default (parallel, unless `REACT_DOCTOR_PARALLEL`
+* sets a worker count — the flag itself no longer takes one).
+*/
+const resolveParallelFlag = (parallel) => parallel === false ? 1 : void 0;
+//#endregion
+//#region src/cli/utils/resolve-cli-inspect-options.ts
+/**
+* Translates CLI flags into the `InspectOptions` contract `inspect()`
+* accepts. Flag-derived fields only (`scoreOnly`, `noScore`, `silent`,
+* `isCi`): every `userConfig` fallback — including `noScore` — lives in
+* `inspect()`'s merge layer, which sees each project's module-merged
+* config. The plain boolean knobs (`lint`, `deadCode`, `supplyChain`,
+* `verbose`) pass through unchanged for the same reason. This resolver reads
+* `userConfig` only to decide the `--blocking warning` gate.
+*/
+const resolveCliInspectOptions = (flags, userConfig) => {
+	const wantsWarningGate = pickBlockingLevel(flags, userConfig) === "warning";
+	const isDesignScan = flags.design === true;
+	return {
+		lint: flags.lint,
+		deadCode: isDesignScan ? false : flags.deadCode,
+		supplyChain: isDesignScan ? false : flags.supplyChain,
+		verbose: flags.verbose,
+		outputDirectory: flags.outputDir,
+		respectInlineDisables: flags.respectInlineDisables === false ? false : void 0,
+		warnings: wantsWarningGate ? true : flags.warnings,
+		scoreOnly: flags.score === true,
+		noScore: isDesignScan || flags.score === false || flags.telemetry === false ? true : void 0,
+		isCi: isCiEnvironment(),
+		silent: Boolean(flags.json),
+		concurrency: resolveParallelFlag(flags.parallel),
+		maxDurationMs: resolveMaxDurationFlag(flags.maxDuration),
+		categoryFilters: resolveCliCategories(flags.category),
+		includedTags: isDesignScan ? new Set(["design"]) : void 0,
+		includeTagDefaults: isDesignScan ? true : void 0,
+		scoreDisabledMessage: isDesignScan ? "Design scans do not affect the React health score." : void 0
+	};
+};
+//#endregion
+//#region src/cli/utils/resolve-workspace-dead-code-owner.ts
+const resolveWorkspaceDeadCodeOwner = (input) => {
+	if (!input.isRootDeadCodeEnabled) return null;
+	const resolvedRootDirectory = path$1.resolve(input.rootDirectory);
+	return input.projectDirectories.find((projectDirectory) => path$1.resolve(projectDirectory) === resolvedRootDirectory) ?? null;
+};
+//#endregion
+//#region src/cli/utils/retry-missing-project-scores.ts
+const retryMissingProjectScores = async (projectScans) => mapWithConcurrency(projectScans, 64, async (projectScan) => {
+	if (!(projectScan.result.score === null && !projectScan.isScoreDisabled && !hasIncompleteScoreAnalysis(projectScan.result.skippedChecks))) return projectScan;
+	const score = await calculateScore(filterScansForSurface([projectScan], "score"));
+	recordCount(METRIC.scanScoreRetry, 1, { succeeded: score !== null });
+	return score === null ? projectScan : {
+		...projectScan,
+		result: {
+			...projectScan.result,
+			score
+		}
+	};
+});
+//#endregion
+//#region src/cli/utils/resolve-project-relative-directory.ts
+/**
+* The scanned project's directory relative to the diff root, forward-slashed —
+* or `null` when the project resolves outside the root (a `..` segment or an
+* absolute path, neither of which can be matched against repo-relative changed
+* files). An empty string means the project *is* the diff root. Shared by the
+* diff helpers that map changed files to a workspace (`resolveProjectDiffIncludePaths`,
+* `projectManifestChanged`) so the boundary rule lives in one place.
+*/
+const resolveProjectRelativeDirectory = (rootDirectory, projectDirectory) => {
+	const relativeProjectDirectory = toForwardSlashes(path$1.relative(rootDirectory, projectDirectory));
+	if (relativeProjectDirectory === ".." || relativeProjectDirectory.startsWith("../")) return null;
+	if (path$1.isAbsolute(relativeProjectDirectory)) return null;
+	return relativeProjectDirectory;
+};
+//#endregion
+//#region src/cli/utils/resolve-project-source-file-paths.ts
+const resolveProjectSourceFilePaths = (rootDirectory, projectDirectory, filePaths) => {
+	const relativeProjectDirectory = resolveProjectRelativeDirectory(rootDirectory, projectDirectory);
+	if (relativeProjectDirectory === null) return [];
+	const sourceFilePaths = filterSourceFiles([...filePaths]);
+	if (relativeProjectDirectory.length === 0) return sourceFilePaths;
+	const projectPrefix = `${relativeProjectDirectory}/`;
+	return sourceFilePaths.flatMap((filePath) => {
+		const normalizedFilePath = toForwardSlashes(filePath);
+		if (!normalizedFilePath.startsWith(projectPrefix)) return [];
+		const projectRelativePath = normalizedFilePath.slice(projectPrefix.length);
+		return projectRelativePath.length > 0 ? [projectRelativePath] : [];
+	});
+};
+//#endregion
+//#region src/cli/utils/resolve-project-diff-include-paths.ts
+const resolveProjectDiffIncludePaths = (rootDirectory, projectDirectory, diffInfo) => {
+	return resolveProjectSourceFilePaths(rootDirectory, projectDirectory, diffInfo.changedFiles);
+};
+/**
+* Re-keys repo-relative changed line ranges (from `getChangedLineRanges`) to
+* the scanned project, mirroring `resolveProjectDiffIncludePaths`'s boundary
+* rule so the `lines` scope filter inside `inspect()` matches the project-
+* relative diagnostic paths. Files outside the project are dropped.
+*/
+const resolveProjectChangedLineRanges = (rootDirectory, projectDirectory, ranges) => {
+	const relativeProjectDirectory = resolveProjectRelativeDirectory(rootDirectory, projectDirectory);
+	if (relativeProjectDirectory === null) return [];
+	if (relativeProjectDirectory.length === 0) return ranges.map((entry) => ({
+		...entry,
+		file: toForwardSlashes(entry.file)
+	}));
+	const projectPrefix = `${relativeProjectDirectory}/`;
+	return ranges.flatMap((entry) => {
+		const normalizedFilePath = toForwardSlashes(entry.file);
+		if (!normalizedFilePath.startsWith(projectPrefix)) return [];
+		const projectRelativePath = normalizedFilePath.slice(projectPrefix.length);
+		return projectRelativePath.length > 0 ? [{
+			...entry,
+			file: projectRelativePath
+		}] : [];
+	});
+};
+//#endregion
+//#region src/cli/utils/resolve-project-scan.ts
+const resolveProjectScan = async (rootScanTarget, projectDirectory) => {
+	const projectScanTarget = projectDirectory === rootScanTarget.resolvedDirectory ? rootScanTarget : await resolveScanTarget(projectDirectory, { allowAmbiguous: true });
+	return {
+		directory: projectScanTarget.resolvedDirectory,
+		config: projectDirectory === rootScanTarget.resolvedDirectory ? rootScanTarget.userConfig : mergeReactDoctorConfigs(rootScanTarget.userConfig, projectScanTarget.userConfig ?? void 0),
+		configSourceDirectory: projectScanTarget.userConfig?.plugins === void 0 ? rootScanTarget.configSourceDirectory : projectScanTarget.configSourceDirectory
+	};
+};
+//#endregion
+//#region src/cli/utils/highlight-code-line.ts
+const CODE_TOKEN_PATTERN = /\/\/.*|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:as|async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|false|finally|for|from|function|get|if|implements|import|in|instanceof|interface|let|new|null|of|package|private|protected|public|return|set|static|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|with|yield)\b|\b(?:0[xob][\da-f]+|\d+(?:\.\d+)?)\b/giu;
+const highlightCodeLine = (codeLine) => codeLine.replace(CODE_TOKEN_PATTERN, (token) => {
+	if (token.startsWith("/")) return highlighter.gray(token);
+	if (token.startsWith("\"") || token.startsWith("'") || token.startsWith("`")) return highlighter.success(token);
+	if (/^\d|^0[xob]/i.test(token)) return highlighter.warn(token);
+	return highlighter.info(token);
+});
+//#endregion
+//#region src/cli/utils/render-code-frame.ts
+const SOURCE_LINE_BREAK_PATTERN = /\r\n|[\n\r\u2028\u2029]/;
+const renderCodeFrame = ({ source, line, column, endLine, message, linesAbove, linesBelow, maximumLineLength }) => {
+	const sourceLines = source.split(SOURCE_LINE_BREAK_PATTERN);
+	if (line < 1 || line > sourceLines.length) return null;
+	const offendingLine = sourceLines[line - 1];
+	if (offendingLine === void 0 || offendingLine.length > maximumLineLength) return null;
+	const lastMarkedLine = Math.min(Math.max(endLine ?? line, line), sourceLines.length);
+	const firstDisplayedLine = Math.max(line - linesAbove, 1);
+	const lastDisplayedLine = Math.min(lastMarkedLine + linesBelow, sourceLines.length);
+	const lineNumberWidth = String(lastDisplayedLine).length;
+	const hasCaret = lastMarkedLine === line && column !== void 0;
+	const outputLines = [];
+	if (message && !hasCaret) outputLines.push(`${" ".repeat(lineNumberWidth + 2)}${highlighter.error(message)}`);
+	for (let displayedLineNumber = firstDisplayedLine; displayedLineNumber <= lastDisplayedLine; displayedLineNumber += 1) {
+		const sourceLine = sourceLines[displayedLineNumber - 1] ?? "";
+		const isMarked = displayedLineNumber >= line && displayedLineNumber <= lastMarkedLine;
+		const gutter = ` ${String(displayedLineNumber).padStart(lineNumberWidth)} |`;
+		const marker = isMarked ? highlighter.error(">") : " ";
+		outputLines.push(`${marker}${highlighter.dim(gutter)}${sourceLine.length > 0 ? ` ${highlightCodeLine(sourceLine)}` : ""}`);
+		if (isMarked && hasCaret) {
+			const markerSpacing = sourceLine.slice(0, Math.max(column - 1, 0)).replace(/[^\t]/g, " ");
+			const emptyGutter = gutter.replace(/\d/g, " ");
+			const markerMessage = message ? ` ${highlighter.error(message)}` : "";
+			outputLines.push(` ${highlighter.dim(emptyGutter)} ${markerSpacing}${highlighter.error("^")}${markerMessage}`);
+		}
+	}
+	return outputLines.join("\n");
+};
+//#endregion
+//#region src/cli/utils/resolve-absolute-path.ts
+/**
+* Resolves a diagnostic's `filePath` (relative to its project root, or
+* already absolute) to an absolute path. Shared by the code-frame reader and
+* the terminal hyperlink builder so both turn a relative path into the same
+* on-disk location.
+*/
+const resolveAbsolutePath = (filePath, rootDirectory) => path$1.isAbsolute(filePath) ? filePath : path$1.resolve(rootDirectory || ".", filePath);
+//#endregion
+//#region src/cli/utils/build-code-frame.ts
+/**
+* Renders a syntax-highlighted source excerpt around a diagnostic site
+* with a caret pointing at the offending column. Returns null when the
+* file can't be read (e.g. multi-project summaries where paths are
+* resolved against a different cwd), so callers can fall back to the
+* bare `file:line` reference instead of failing the whole render.
+*/
+const buildCodeFrame = (input) => {
+	if (input.line <= 0) return null;
+	const absolutePath = resolveAbsolutePath(input.filePath, input.rootDirectory);
+	let source;
+	try {
+		source = fs$2.readFileSync(absolutePath, "utf8");
+	} catch {
+		return null;
+	}
+	const endLine = input.endLine != null && input.endLine > input.line ? input.endLine : void 0;
+	return renderCodeFrame({
+		source,
+		line: input.line,
+		column: endLine === void 0 && input.column > 0 ? input.column : void 0,
+		endLine,
+		message: input.message,
+		linesAbove: 1,
+		linesBelow: 1,
+		maximumLineLength: 200
+	});
+};
+//#endregion
+//#region src/cli/utils/select-projects.ts
+const discoverWorkspacePackages = (rootDirectory) => {
+	const hasRootPackageJson = isFile(path$1.join(rootDirectory, "package.json"));
+	const packages = listWorkspacePackages(rootDirectory);
+	if (packages.length === 0 && (!hasRootPackageJson || isMonorepoRoot(rootDirectory))) return discoverSupportedSubprojects(rootDirectory);
+	return packages;
+};
+const selectProjects = async (rootDirectory, projectFlag, skipPrompts, configProjects) => {
+	const packages = discoverWorkspacePackages(rootDirectory);
+	if (projectFlag) return resolveProjectFlag(projectFlag, packages, rootDirectory);
+	const configRequestedNames = (configProjects ?? []).map((requestedName) => requestedName.trim()).filter((requestedName) => requestedName.length > 0);
+	if (configRequestedNames.length > 0) {
+		const resolvedDirectories = resolveRequestedProjects(configRequestedNames, packages, rootDirectory, "config");
+		recordCount(METRIC.projectConfigSelected, resolvedDirectories.length);
+		return resolvedDirectories;
+	}
+	if (packages.length === 0) return [rootDirectory];
+	if (packages.length === 1) {
+		cliLogger.log(`${highlighter.success("✔")} Select projects ${highlighter.dim("›")} ${packages[0].name}`);
+		return [packages[0].directory];
+	}
+	if (skipPrompts) {
+		printDiscoveredProjects(packages);
+		return packages.map((workspacePackage) => workspacePackage.directory);
+	}
+	return promptProjectSelection(packages, rootDirectory);
+};
+const ALL_PROJECTS_SENTINEL = "*";
+const resolveProjectFlag = (projectFlag, workspacePackages, rootDirectory) => {
+	const requestedNames = projectFlag.split(",").map((name) => name.trim()).filter((name) => name.length > 0);
+	if (requestedNames.length === 0) throw new CliInputError(`--project "${projectFlag}" did not name any project. Pass a project name, a comma-separated list, or "*" for all.`);
+	return resolveRequestedProjects(requestedNames, workspacePackages, rootDirectory, "flag");
+};
+const resolveRequestedProjects = (requestedNames, workspacePackages, rootDirectory, source) => {
+	if (requestedNames.includes(ALL_PROJECTS_SENTINEL)) return workspacePackages.length > 0 ? workspacePackages.map((workspacePackage) => workspacePackage.directory) : [rootDirectory];
+	const sourceLabel = source === "flag" ? "Project" : "Config \"projects\" entry";
+	return requestedNames.map((requestedName) => {
+		const matched = workspacePackages.find((workspacePackage) => workspacePackage.name === requestedName || path$1.basename(workspacePackage.directory) === requestedName);
+		if (matched) return matched.directory;
+		if (path$1.basename(rootDirectory) === requestedName) return rootDirectory;
+		const candidateDirectory = path$1.resolve(rootDirectory, requestedName);
+		if (isDirectory(candidateDirectory)) {
+			recordCount(METRIC.projectPathSelected);
+			return candidateDirectory;
+		}
+		const availableNames = workspacePackages.map((workspacePackage) => workspacePackage.name).join(", ");
+		throw new CliInputError(workspacePackages.length > 0 ? `${sourceLabel} "${requestedName}" is not a workspace project or a directory. Available projects: ${availableNames}` : `${sourceLabel} "${requestedName}" is not a directory under ${rootDirectory}.`);
+	});
+};
+const printDiscoveredProjects = (packages) => {
+	cliLogger.log(`${highlighter.success("✔")} Select projects ${highlighter.dim("›")} ${packages.map((workspacePackage) => workspacePackage.name).join(", ")}`);
+};
+const promptProjectSelection = async (workspacePackages, rootDirectory) => {
+	const { selectedDirectories } = await prompts({
+		type: "multiselect",
+		name: "selectedDirectories",
+		message: "Select projects",
+		choices: workspacePackages.map((workspacePackage) => ({
+			title: workspacePackage.name,
+			description: path$1.relative(rootDirectory, workspacePackage.directory),
+			value: workspacePackage.directory
+		})),
+		min: 1
+	});
+	return selectedDirectories;
+};
+//#endregion
+//#region src/cli/utils/project-scan-outcome.ts
+const partitionProjectScanOutcomes = (outcomes) => {
+	const completedScans = [];
+	const skippedScans = [];
+	for (const outcome of outcomes) {
+		if (outcome.status === "completed") {
+			completedScans.push(outcome.value);
+			continue;
+		}
+		if (outcome.status === "skipped") skippedScans.push(outcome.value);
+	}
+	return {
+		completedScans,
+		skippedScans
+	};
+};
+//#endregion
+//#region src/cli/utils/project-manifest-changed.ts
+const PACKAGE_JSON = "package.json";
+/**
+* True when the scanned project's own `package.json` is among the diff's
+* changed files. Shares `resolveProjectRelativeDirectory`'s boundary handling
+* with `resolveProjectDiffIncludePaths` so a workspace package matches only
+* its own manifest (not the monorepo root's or a sibling's) — which is exactly
+* what that project's per-project supply-chain check scores.
+*/
+const projectManifestChanged = (rootDirectory, projectDirectory, diffInfo) => {
+	const relativeProjectDirectory = resolveProjectRelativeDirectory(rootDirectory, projectDirectory);
+	if (relativeProjectDirectory === null) return false;
+	const manifestPath = relativeProjectDirectory.length === 0 ? PACKAGE_JSON : `${relativeProjectDirectory}/${PACKAGE_JSON}`;
+	return diffInfo.changedFiles.some((filePath) => toForwardSlashes(filePath) === manifestPath);
+};
+//#endregion
+//#region src/cli/utils/resolve-excluded-project-directories.ts
+const resolveExcludedProjectDirectories = (scanDirectory, projectDirectories) => {
+	const excludedDirectories = /* @__PURE__ */ new Map();
+	for (const projectDirectory of projectDirectories) {
+		if (!isPathInsideDirectory(projectDirectory, scanDirectory)) continue;
+		const resolvedDirectory = path$1.resolve(projectDirectory);
+		if (!excludedDirectories.has(resolvedDirectory)) excludedDirectories.set(resolvedDirectory, projectDirectory);
+	}
+	return [...excludedDirectories.values()];
+};
+//#endregion
+//#region src/cli/utils/validate-mode-flags.ts
+const usedDiffAlias = (flags) => flags.diff !== void 0 && flags.diff !== false && flags.diff !== "false" && flags.diff !== "";
+const usedScope = (flags) => typeof flags.scope === "string" && flags.scope.length > 0;
+const validateIncludeUntrackedScope = (includeUntracked, scope) => {
+	if (!includeUntracked || scope !== void 0 && scope !== "full") return;
+	throw new CliInputError("--include-untracked requires the files, changed, lines, or contextual scope (via --scope, --diff, or config).");
+};
+const validateFilePathSelectionFlags = (flags) => {
+	if (flags.staged || flags.changedFilesFrom !== void 0) throw new CliInputError("Cannot combine file path arguments with --staged or --changed-files-from. Use one file source.");
+	if (usedDiffAlias(flags)) throw new CliInputError("Cannot combine file path arguments with --diff. File path arguments use the files scope.");
+	if (usedScope(flags) && flags.scope !== "files") throw new CliInputError(`Cannot combine file path arguments with --scope ${flags.scope}. File path arguments use --scope files.`);
+	if (flags.base !== void 0) throw new CliInputError("Cannot combine file path arguments with --base. The selected files do not need a Git base.");
+};
+const validateModeFlags = (flags) => {
+	if (flags.baseline && (flags.staged || flags.scope === "lines" || flags.scope === "contextual" || flags.scope === "files")) throw new CliInputError("--baseline requires a full or changed scan; it cannot be combined with --staged.");
+	if (usedScope(flags) && usedDiffAlias(flags)) throw new CliInputError("Cannot combine --scope and --diff; --diff is the deprecated alias.");
+	if (flags.staged && usedDiffAlias(flags)) throw new CliInputError("Cannot combine --staged and --diff; pick one mode.");
+	if (flags.staged && (flags.scope === "full" || flags.scope === "changed")) throw new CliInputError(`Cannot combine --staged with --scope ${flags.scope}; use --scope files, --scope lines, or --scope contextual, or drop --scope.`);
+	if (flags.includeUntracked && flags.staged) throw new CliInputError("Cannot combine --include-untracked with --staged; the git index never holds untracked files.");
+	if (flags.score && flags.json) throw new CliInputError("Cannot combine --score and --json; pick one output mode.");
+	if (flags.score && flags.telemetry === false) throw new CliInputError("Cannot combine --score with --no-telemetry; --score prints the score that --no-telemetry disables.");
+	if (flags.debug && (flags.score === false || flags.telemetry === false)) {
+		const disablingFlag = flags.score === false ? "--no-score" : "--no-telemetry";
+		throw new CliInputError(`Cannot combine --debug with ${disablingFlag}; ${disablingFlag} disables the Sentry reporting --debug needs to capture a trace.`);
+	}
+};
+//#endregion
+//#region src/cli/utils/format-skipped-projects-message.ts
+const formatSkippedProjectsMessage = (projectCount) => `${projectCount} ${projectCount === 1 ? "project was" : "projects were"} skipped because the max scan duration was reached.`;
+//#endregion
+//#region src/cli/utils/resolve-scan-exit-code.ts
+const resolveScanExitCode = (input) => {
+	if (input.blockingLevel === "none") return 0;
+	if (input.scans.some(({ result }) => hasLintHardFailure(result))) return 1;
+	if (input.diagnosticsAreGateExempt === true) return 0;
+	const diagnostics = filterScansForSurface(input.scans, "ciFailure");
+	if (shouldBlockCi(diagnostics, input.blockingLevel)) return 1;
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "warning")) return input.warningExitCode ?? 0;
+	return 0;
+};
+//#endregion
+export { createInvocationInspect as A, hasIncompleteScoreAnalysis as B, detectLaunchableAgents as C, buildHandoffPayload as D, launchCliAgent as E, formatSkippedCheckLabel as F, hasLintHardFailure as G, buildNoScoreMessage as H, formatElapsedTime as I, formatFixRecipeLine as J, buildRulePriorityMap as K, printFooter as L, resolveMergeBaseRef as M, printHeadlessReport as N, collectProjectSourceFiles as O, pluralize as P, printDiagnosticsDump as R, setUpGitHubActions as S, copyToClipboard as T, buildEmptyReportMessage as U, filterDiagnosticsByCategories as V, resolveInvocationOxlintConcurrency as W, formatLearnMoreLine as Y, retryMissingProjectScores as _, validateModeFlags as a, filterScansForSurface as b, partitionProjectScanOutcomes as c, buildCodeFrame as d, resolveProjectScan as f, resolveProjectRelativeDirectory as g, resolveProjectSourceFilePaths as h, validateIncludeUntrackedScope as i, inspect as j, deduplicateProjectScans as k, discoverWorkspacePackages as l, resolveProjectDiffIncludePaths as m, formatSkippedProjectsMessage as n, resolveExcludedProjectDirectories as o, resolveProjectChangedLineRanges as p, buildSortedRuleGroups as q, validateFilePathSelectionFlags as r, projectManifestChanged as s, resolveScanExitCode as t, selectProjects as u, resolveWorkspaceDeadCodeOwner as v, CLI_AGENT_BINARIES as w, countUniqueScannedFiles as x, resolveCliInspectOptions as y, formatDiagnosticSite as z };
+
+//# sourceMappingURL=resolve-scan-exit-code-CKO-d5OH.js.map
+//# debugId=99896995-ee6c-5a7e-b86c-567d397be2dc

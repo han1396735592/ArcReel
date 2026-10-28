@@ -1,0 +1,285 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b40ad281-9ccc-5706-9e9d-78634ffd7a5f")}catch(e){}}();
+import { s as GH_DEFAULT_BRANCH_PROBE_TIMEOUT_MS } from "./constants-_b1h6lxa.js";
+import { _t as findGitRepositoryRoot } from "./record-metric-AbxY4m3i.js";
+import { t as unrefStdin } from "./unref-stdin-D-NZBFpg.js";
+import { N as cliLogger } from "./install-doctor-script-BvrxLUFo.js";
+import { createRequire } from "node:module";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+//#region src/cli/utils/run-command.ts
+const execFileAsync = promisify(execFile);
+const runCommand = async (command, args, cwd, timeoutMs) => {
+	try {
+		const { stdout, stderr } = await execFileAsync(command, [...args], {
+			cwd,
+			encoding: "utf8",
+			timeout: timeoutMs
+		});
+		return {
+			success: true,
+			stdout: stdout.trim(),
+			stderr: stderr.trim()
+		};
+	} catch (error) {
+		const failure = error;
+		return {
+			success: false,
+			stdout: (failure.stdout ?? "").trim(),
+			stderr: (failure.stderr ?? "").trim()
+		};
+	}
+};
+//#endregion
+//#region src/cli/utils/detect-default-branch.ts
+const detectDefaultBranch = async (cwd, run = runCommand) => {
+	const repoView = await run("gh", [
+		"repo",
+		"view",
+		"--json",
+		"defaultBranchRef",
+		"--jq",
+		".defaultBranchRef.name"
+	], cwd, GH_DEFAULT_BRANCH_PROBE_TIMEOUT_MS);
+	if (repoView.success && repoView.stdout !== "" && repoView.stdout !== "null") return repoView.stdout;
+	const symRef = await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
+	if (symRef.success) {
+		const branchMatch = symRef.stdout.match(/refs\/remotes\/origin\/(.+)$/);
+		if (branchMatch) return branchMatch[1];
+	}
+	if ((await run("git", [
+		"rev-parse",
+		"--verify",
+		"origin/main"
+	], cwd)).success) return "main";
+	if ((await run("git", [
+		"rev-parse",
+		"--verify",
+		"origin/master"
+	], cwd)).success) return "master";
+	return null;
+};
+//#endregion
+//#region src/cli/utils/is-command-available.ts
+const isWindows = process.platform === "win32";
+const candidateFileNames = (command) => {
+	if (!isWindows || path$1.extname(command)) return [command];
+	return [command, ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map((extension) => extension.trim()).filter(Boolean).map((extension) => `${command}${extension}`)];
+};
+const isCommandAvailable = (command) => {
+	const pathDirectories = (process.env.PATH ?? "").split(path$1.delimiter).filter(Boolean);
+	for (const directory of pathDirectories) for (const fileName of candidateFileNames(command)) {
+		const binaryPath = path$1.join(directory, fileName);
+		try {
+			if (!fs$1.statSync(binaryPath).isFile()) continue;
+			if (!isWindows) fs$1.accessSync(binaryPath, fs$1.constants.X_OK);
+			return true;
+		} catch {}
+	}
+	return false;
+};
+//#endregion
+//#region src/cli/utils/should-auto-select-current-choice.ts
+const shouldAutoSelectCurrentChoice = (choiceStates, cursor) => {
+	if (choiceStates.some((choiceState) => choiceState.selected)) return false;
+	const currentChoice = choiceStates[cursor];
+	return Boolean(currentChoice) && !currentChoice.disabled;
+};
+//#endregion
+//#region src/cli/utils/should-select-all-choices.ts
+const shouldSelectAllChoices = (choiceStates) => {
+	return choiceStates.filter((choiceState) => !choiceState.disabled).some((choiceState) => choiceState.selected !== true);
+};
+//#endregion
+//#region src/cli/utils/prompts.ts
+const require = createRequire(import.meta.url);
+const PROMPTS_MULTISELECT_MODULE_PATH = "prompts/lib/elements/multiselect";
+let didPatchMultiselectToggleAll = false;
+let didPatchMultiselectSubmit = false;
+const onCancel = () => {
+	cliLogger.break();
+	cliLogger.log("Cancelled.");
+	cliLogger.break();
+	process.exit(0);
+};
+const patchMultiselectToggleAll = () => {
+	if (didPatchMultiselectToggleAll) return;
+	didPatchMultiselectToggleAll = true;
+	const multiselectPromptConstructor = require(PROMPTS_MULTISELECT_MODULE_PATH);
+	multiselectPromptConstructor.prototype.toggleAll = function() {
+		const isCurrentChoiceDisabled = Boolean(this.value[this.cursor]?.disabled);
+		if (this.maxChoices !== void 0 || isCurrentChoiceDisabled) {
+			this.bell();
+			return;
+		}
+		const shouldSelectAllEnabledChoices = shouldSelectAllChoices(this.value);
+		for (const choiceState of this.value) {
+			if (choiceState.disabled) continue;
+			choiceState.selected = shouldSelectAllEnabledChoices;
+		}
+		this.render();
+	};
+};
+const patchMultiselectSubmit = () => {
+	if (didPatchMultiselectSubmit) return;
+	didPatchMultiselectSubmit = true;
+	const multiselectPromptConstructor = require(PROMPTS_MULTISELECT_MODULE_PATH);
+	const originalSubmit = multiselectPromptConstructor.prototype.submit;
+	multiselectPromptConstructor.prototype.submit = function() {
+		if (shouldAutoSelectCurrentChoice(this.value, this.cursor)) this.value[this.cursor].selected = true;
+		originalSubmit.call(this);
+	};
+};
+const prompts = async (questions, options = {}) => {
+	const { default: basePrompts } = await import("prompts");
+	patchMultiselectToggleAll();
+	patchMultiselectSubmit();
+	return basePrompts(questions, { onCancel: options.onCancel ?? onCancel }).finally(unrefStdin);
+};
+//#endregion
+//#region src/cli/utils/install-github-workflow.ts
+const buildWorkflowContent = (defaultBranch, actionRef = "v2") => `# React Doctor — finds security, performance, correctness, accessibility,
+# bundle-size, and architecture issues in React codebases.
+#
+# Docs: https://www.react.doctor/ci
+# Source: https://github.com/millionco/react-doctor
+
+name: React Doctor
+
+on:
+  # Scans the PR's changed files and posts a sticky summary comment listing only the new issues introduced relative to the merge base of the target branch.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Scans \`${defaultBranch}\` on every push to track the health-score trend and catch regressions that slipped past PR review.
+  push:
+    branches: ["${defaultBranch}"]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+# Cancels any in-flight scan for the same PR (or branch, on push) the moment a new commit arrives, so reviewers only ever see the latest run.
+concurrency:
+  group: react-doctor-\${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 gives React Doctor the full git history it needs to find the merge base with the target branch. Without it a shallow checkout has no merge base, so PR runs can't compare against the base and fall back to reporting every issue in the changed files (pre-existing ones included) instead of only the ones the PR introduced.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: millionco/react-doctor@${actionRef}
+        # Advisory by default: React Doctor reports findings on every PR — a
+        # sticky summary comment, inline review comments, and a commit status
+        # with the health score — but never fails the check, so it won't red-X
+        # a teammate's PR on day one. When your team trusts the signal, graduate
+        # the gate: uncomment the block below and set blocking to "error" (fail
+        # on new error-severity findings) or "warning" (fail on any finding).
+        # Full reference: https://www.react.doctor/ci
+        #
+        # Security: @v2 is a floating major tag that may move. For supply-chain-
+        # hardened CI, pin to a full commit SHA with a version comment instead:
+        # uses: millionco/react-doctor@<sha>  # v2.x.x
+        # with:
+        #   blocking: error          # Gate level: "none" (advisory, the default) | "warning" | "error"
+        #   scope: full              # On PRs, scan the whole project instead of just changed files
+        #   comment: false           # Disable the sticky PR summary comment
+        #   comment-on-clean: false # Skip new comments for clean scans
+        #   review-comments: false   # Disable inline review comments on changed lines
+        #   commit-status: false     # Disable the commit status (score + counts, links to the run)
+        #   version: "0.4.0"         # Pin to a specific react-doctor version instead of "latest"
+        #   directory: apps/web      # Scan a sub-directory (default: ".")
+        #   project: "web,admin"     # In a monorepo, scan specific workspace project(s)
+`;
+const getGitRootWorkflowPath = (gitRoot) => path$1.join(gitRoot, ".github", "workflows", "react-doctor.yml");
+const getReactDoctorWorkflowPath = (projectRoot) => {
+	const gitRoot = findGitRepositoryRoot(projectRoot);
+	if (gitRoot === null) return path$1.join(projectRoot, ".github", "workflows", "react-doctor.yml");
+	return getGitRootWorkflowPath(gitRoot);
+};
+const isReactDoctorWorkflowInstalled = (projectRoot) => fs$1.existsSync(getReactDoctorWorkflowPath(projectRoot));
+const V1_FLOATING_ACTION_REF = String.raw`millionco/react-doctor@v1(?![\w.])`;
+const V2_FLOATING_ACTION_REF = "millionco/react-doctor@v2";
+const readReactDoctorWorkflow = (projectRoot) => {
+	const workflowPath = getReactDoctorWorkflowPath(projectRoot);
+	try {
+		return {
+			workflowPath,
+			content: fs$1.readFileSync(workflowPath, "utf8")
+		};
+	} catch {
+		return null;
+	}
+};
+const workflowUsesV1Action = (content) => new RegExp(V1_FLOATING_ACTION_REF).test(content);
+const upgradeWorkflowActionToV2 = (content) => {
+	const upgraded = content.replace(new RegExp(V1_FLOATING_ACTION_REF, "g"), V2_FLOATING_ACTION_REF);
+	return {
+		content: upgraded,
+		changed: upgraded !== content
+	};
+};
+const installReactDoctorWorkflow = (projectRoot, defaultBranch = "main") => {
+	const gitRoot = findGitRepositoryRoot(projectRoot);
+	if (gitRoot === null) return {
+		status: "failed",
+		workflowPath: path$1.join(projectRoot, ".github", "workflows", "react-doctor.yml"),
+		error: "no-git-root"
+	};
+	const workflowPath = getGitRootWorkflowPath(gitRoot);
+	if (fs$1.existsSync(workflowPath)) return {
+		status: "exists",
+		workflowPath
+	};
+	try {
+		fs$1.mkdirSync(path$1.dirname(workflowPath), { recursive: true });
+		fs$1.writeFileSync(workflowPath, buildWorkflowContent(defaultBranch));
+		return {
+			status: "created",
+			workflowPath
+		};
+	} catch {
+		return {
+			status: "failed",
+			workflowPath,
+			error: "write-failed"
+		};
+	}
+};
+const upgradeReactDoctorWorkflowInPlace = (projectRoot) => {
+	const workflow = readReactDoctorWorkflow(projectRoot);
+	if (!workflow) return {
+		status: "not-needed",
+		workflowPath: getReactDoctorWorkflowPath(projectRoot)
+	};
+	const { content, changed } = upgradeWorkflowActionToV2(workflow.content);
+	if (!changed) return {
+		status: "not-needed",
+		workflowPath: workflow.workflowPath
+	};
+	try {
+		fs$1.writeFileSync(workflow.workflowPath, content);
+		return {
+			status: "upgraded",
+			workflowPath: workflow.workflowPath
+		};
+	} catch {
+		return {
+			status: "failed",
+			workflowPath: workflow.workflowPath
+		};
+	}
+};
+//#endregion
+export { readReactDoctorWorkflow as a, workflowUsesV1Action as c, detectDefaultBranch as d, runCommand as f, isReactDoctorWorkflowInstalled as i, prompts as l, getReactDoctorWorkflowPath as n, upgradeReactDoctorWorkflowInPlace as o, installReactDoctorWorkflow as r, upgradeWorkflowActionToV2 as s, buildWorkflowContent as t, isCommandAvailable as u };
+
+//# sourceMappingURL=install-github-workflow-BABtyGBR.js.map
+//# debugId=b40ad281-9ccc-5706-9e9d-78634ffd7a5f

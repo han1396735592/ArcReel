@@ -1,0 +1,582 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="f3d834df-0000-55c9-ac64-c75a03f1b220")}catch(e){}}();
+import { dt as COMPILER_CLEANUP_BUCKET, ft as COMPILER_CLEANUP_RULE_KEYS, u as METRIC } from "./constants-_b1h6lxa.js";
+import { Et as getEquivalentRuleKeys, Gn as isPlainObject, Ht as loadConfigWithSource, It as isSameRuleKey, Mt as highlighter, Q as buildRuleDocsUrl, in as validateConfigTypes, it as clearConfigCache, t as recordCount } from "./record-metric-AbxY4m3i.js";
+import { N as cliLogger, n as findNearestPackageDirectory } from "./install-doctor-script-BvrxLUFo.js";
+import { t as readObjectFile } from "./read-object-file-D9jF1KIF.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { REACT_DOCTOR_RULES } from "oxlint-plugin-react-doctor/core";
+import { generateCode, loadFile, writeFile } from "magicast";
+import { getConfigFromVariableDeclaration, getDefaultExportOptions } from "magicast/helpers";
+//#region src/cli/utils/rule-catalog.ts
+const buildRuleCatalog = () => REACT_DOCTOR_RULES.map((entry) => ({
+	key: entry.key,
+	id: entry.id,
+	category: entry.rule.category ?? "Other",
+	defaultSeverity: entry.rule.severity,
+	framework: entry.rule.framework ?? "global",
+	tags: entry.rule.tags ?? [],
+	recommendation: entry.rule.recommendation,
+	defaultEnabled: entry.rule.defaultEnabled !== false
+}));
+/**
+* Resolves a user-supplied rule reference to a catalog entry. Accepts the
+* fully-qualified key (`react-doctor/no-danger`), the bare id (`no-danger`),
+* and legacy plugin keys (`react/no-danger`) via the shared alias map.
+*/
+const findRuleInCatalog = (catalog, ruleQuery) => {
+	const normalizedQuery = ruleQuery.trim();
+	if (normalizedQuery.length === 0) return void 0;
+	const directMatch = catalog.find((entry) => entry.key === normalizedQuery || entry.id === normalizedQuery);
+	if (directMatch) return directMatch;
+	return catalog.find((entry) => isSameRuleKey(entry.key, normalizedQuery));
+};
+const listRuleCategories = (catalog) => [...new Set(catalog.map((entry) => entry.category))].sort();
+const listRuleTags = (catalog) => [...new Set(catalog.flatMap((entry) => [...entry.tags]))].sort();
+//#endregion
+//#region src/cli/utils/render-rule-catalog.ts
+const SEVERITY_COLUMN_WIDTH_CHARS = 6;
+const colorizeSeverity = (severity, text) => {
+	if (severity === "error") return highlighter.error(text);
+	if (severity === "warn") return highlighter.warn(text);
+	return highlighter.gray(text);
+};
+const formatSourceNote = (effective) => effective.source === "default" ? highlighter.dim("(default)") : highlighter.dim(`(${effective.source})`);
+const renderRuleCatalog = (rows) => {
+	if (rows.length === 0) return highlighter.dim("No rules match the given filters.");
+	const rowsByCategory = /* @__PURE__ */ new Map();
+	for (const row of rows) {
+		const bucket = rowsByCategory.get(row.entry.category) ?? [];
+		bucket.push(row);
+		rowsByCategory.set(row.entry.category, bucket);
+	}
+	const lines = [];
+	for (const category of [...rowsByCategory.keys()].sort()) {
+		const categoryRows = (rowsByCategory.get(category) ?? []).sort((leftRow, rightRow) => leftRow.entry.key.localeCompare(rightRow.entry.key));
+		lines.push(highlighter.bold(`${category} ${highlighter.dim(`(${categoryRows.length})`)}`));
+		for (const row of categoryRows) {
+			const severityBadge = colorizeSeverity(row.effective.value, row.effective.value.padEnd(SEVERITY_COLUMN_WIDTH_CHARS));
+			const tagSuffix = row.entry.tags.length > 0 ? highlighter.dim(`  [${row.entry.tags.join(", ")}]`) : "";
+			lines.push(`  ${severityBadge} ${row.entry.key} ${formatSourceNote(row.effective)}${tagSuffix}`);
+		}
+		lines.push("");
+	}
+	lines.push(highlighter.dim(`${rows.length} rule${rows.length === 1 ? "" : "s"} shown.`));
+	return lines.join("\n");
+};
+const DETAIL_LABEL_COLUMN_WIDTH_CHARS = 18;
+const formatDetailRow = (label, value) => `  ${highlighter.dim(label.padEnd(DETAIL_LABEL_COLUMN_WIDTH_CHARS))}${value}`;
+const renderRuleExplanation = (row) => {
+	const { entry, effective } = row;
+	const lines = [highlighter.bold(entry.key), ""];
+	lines.push(formatDetailRow("Category", entry.category));
+	lines.push(formatDetailRow("Default severity", entry.defaultSeverity));
+	lines.push(formatDetailRow("Current severity", `${colorizeSeverity(effective.value, effective.value)} ${formatSourceNote(effective)}`));
+	lines.push(formatDetailRow("Framework", entry.framework));
+	lines.push(formatDetailRow("Tags", entry.tags.length > 0 ? entry.tags.join(", ") : "none"));
+	lines.push(formatDetailRow("Default enabled", entry.defaultEnabled ? "yes" : "no (opt-in)"));
+	lines.push("");
+	lines.push(highlighter.bold("Why it matters"));
+	lines.push(`  ${entry.recommendation ?? "No additional guidance recorded for this rule yet."}`);
+	lines.push("");
+	lines.push(highlighter.bold("Configure"));
+	lines.push(highlighter.dim(`  react-doctor rules disable ${entry.key}`));
+	lines.push(highlighter.dim(`  react-doctor rules enable ${entry.key} --severity error`));
+	lines.push(highlighter.dim(`  react-doctor rules set ${entry.key} warn`));
+	lines.push("");
+	lines.push(highlighter.bold("Learn more"));
+	lines.push(highlighter.dim(`  ${buildRuleDocsUrl("react-doctor", entry.id)}`));
+	return lines.join("\n");
+};
+//#endregion
+//#region src/cli/utils/rule-config-file.ts
+const NEW_CONFIG_FILENAME = "doctor.config.json";
+const PACKAGE_JSON_CONFIG_KEY = "reactDoctor";
+const JSON_INDENT_SPACES = 2;
+const MANAGED_KEYS = [
+	"rules",
+	"categories",
+	"ignore"
+];
+/**
+* Decides where a rule-config mutation should be written. Discovery
+* reuses `loadConfigWithSource` (the loader the scan uses) so edits land
+* in the file the scan reads — `doctor.config.{ts,js,…}` is preferred,
+* then `package.json#reactDoctor`. When nothing exists, a fresh
+* `doctor.config.json` is targeted at `projectRoot`. Data configs are
+* re-read raw so unrelated fields round-trip untouched.
+*/
+const resolveRuleConfigTarget = async (projectRoot) => {
+	clearConfigCache();
+	const loaded = await loadConfigWithSource(projectRoot);
+	if (loaded) {
+		if (loaded.format === "package-json") {
+			const embedded = (readObjectFile(loaded.configFilePath) ?? {})[PACKAGE_JSON_CONFIG_KEY];
+			return {
+				format: "package-json",
+				filePath: loaded.configFilePath,
+				directory: loaded.sourceDirectory,
+				exists: true,
+				config: isPlainObject(embedded) ? embedded : {}
+			};
+		}
+		if (loaded.format === "json") {
+			if (path$1.basename(loaded.configFilePath) === "react-doctor.config.json") {
+				const legacyConfig = readObjectFile(loaded.configFilePath) ?? {};
+				delete legacyConfig.$schema;
+				return {
+					format: "json",
+					filePath: path$1.join(loaded.sourceDirectory, NEW_CONFIG_FILENAME),
+					directory: loaded.sourceDirectory,
+					exists: false,
+					config: legacyConfig,
+					migratedFromFilePath: loaded.configFilePath
+				};
+			}
+			return {
+				format: "json",
+				filePath: loaded.configFilePath,
+				directory: loaded.sourceDirectory,
+				exists: true,
+				config: readObjectFile(loaded.configFilePath) ?? {}
+			};
+		}
+		return {
+			format: "module",
+			filePath: loaded.configFilePath,
+			directory: loaded.sourceDirectory,
+			exists: true,
+			config: loaded.config
+		};
+	}
+	return {
+		format: "json",
+		filePath: path$1.join(projectRoot, NEW_CONFIG_FILENAME),
+		directory: projectRoot,
+		exists: false,
+		config: {}
+	};
+};
+const writeJsonConfig = (filePath, nextConfig) => {
+	const { $schema, ...rest } = nextConfig;
+	const serialized = JSON.stringify({
+		$schema: $schema ?? "https://react.doctor/schema/config.json",
+		...rest
+	}, null, JSON_INDENT_SPACES);
+	fs$1.writeFileSync(filePath, `${serialized}\n`);
+};
+const writePackageJsonConfig = (filePath, nextConfig) => {
+	const packageJson = readObjectFile(filePath) ?? {};
+	const serialized = JSON.stringify({
+		...packageJson,
+		[PACKAGE_JSON_CONFIG_KEY]: nextConfig
+	}, null, JSON_INDENT_SPACES);
+	fs$1.writeFileSync(filePath, `${serialized}\n`);
+};
+const syncManagedKeys = (target, nextConfig) => {
+	for (const key of MANAGED_KEYS) {
+		const value = nextConfig[key];
+		if (value === void 0) {
+			if (target[key] !== void 0) delete target[key];
+		} else target[key] = value;
+	}
+};
+const assignNodeSource = (owner, key, code) => {
+	owner[key] = code;
+};
+const editVariableDeclarationConfig = (declaration, config, nextConfig) => {
+	syncManagedKeys(config, nextConfig);
+	const initializer = declaration.init;
+	if (!initializer) return false;
+	const generatedSource = generateCode(config).code;
+	if (initializer.type === "ObjectExpression") {
+		assignNodeSource(declaration, "init", generatedSource);
+		return true;
+	}
+	if (initializer.type === "TSSatisfiesExpression" && initializer.expression.type === "ObjectExpression") {
+		assignNodeSource(initializer, "expression", generatedSource);
+		return true;
+	}
+	return false;
+};
+const writeModuleConfig = async (filePath, nextConfig) => {
+	try {
+		const module = await loadFile(filePath);
+		if (module.exports.default?.$type === "identifier") {
+			const { declaration, config } = getConfigFromVariableDeclaration(module);
+			if (!config || !editVariableDeclarationConfig(declaration, config, nextConfig)) return false;
+		} else syncManagedKeys(getDefaultExportOptions(module), nextConfig);
+		await writeFile(module, filePath);
+		return true;
+	} catch {
+		return false;
+	}
+};
+const writeRuleConfig = async (target, nextConfig) => {
+	if (target.format === "module") {
+		const written = await writeModuleConfig(target.filePath, nextConfig);
+		if (written) clearConfigCache();
+		return { written };
+	}
+	if (target.format === "package-json") writePackageJsonConfig(target.filePath, nextConfig);
+	else {
+		writeJsonConfig(target.filePath, nextConfig);
+		if (target.migratedFromFilePath) fs$1.rmSync(target.migratedFromFilePath, { force: true });
+	}
+	clearConfigCache();
+	return { written: true };
+};
+//#endregion
+//#region src/cli/utils/resolve-effective-rule-severity.ts
+/**
+* Resolves what a rule will actually do under the current config without
+* running a scan. `ignore.tags` is a pre-lint gate: a rule carrying an
+* ignored tag is dropped (via `shouldEnableRule`) before any severity is
+* read, so it wins over every override. Among rules that survive the gate,
+* the scanner's order is `rules` > `categories` > `buckets` > the registry
+* default.
+*/
+const resolveEffectiveRuleSeverity = (config, entry) => {
+	const ignoredTags = config?.ignore?.tags ?? [];
+	if (entry.tags.some((tag) => ignoredTags.includes(tag))) return {
+		value: "off",
+		source: "tag"
+	};
+	const ruleOverrides = config?.rules ?? {};
+	for (const equivalentKey of getEquivalentRuleKeys(entry.key)) {
+		const override = ruleOverrides[equivalentKey];
+		if (override !== void 0) return {
+			value: override,
+			source: "rule"
+		};
+	}
+	if (!entry.defaultEnabled) return {
+		value: "off",
+		source: "default"
+	};
+	const categoryOverride = config?.categories?.[entry.category];
+	if (categoryOverride !== void 0) return {
+		value: categoryOverride,
+		source: "category"
+	};
+	if (COMPILER_CLEANUP_RULE_KEYS.has(entry.key)) {
+		const bucketOverride = config?.buckets?.[COMPILER_CLEANUP_BUCKET];
+		if (bucketOverride !== void 0) return {
+			value: bucketOverride,
+			source: "bucket"
+		};
+	}
+	return {
+		value: entry.defaultEnabled ? entry.defaultSeverity : "off",
+		source: "default"
+	};
+};
+//#endregion
+//#region src/cli/utils/update-rule-config.ts
+/**
+* Sets a per-rule severity, replacing any existing entry for the same
+* rule (including legacy-aliased keys, so a config still targeting
+* `react/no-danger` is rewritten to the canonical key instead of
+* leaving a dead duplicate).
+*/
+const setRuleSeverity = (config, ruleKey, severity) => {
+	const equivalentKeys = new Set(getEquivalentRuleKeys(ruleKey));
+	const nextRules = {};
+	for (const [existingKey, existingSeverity] of Object.entries(config.rules ?? {})) if (!equivalentKeys.has(existingKey)) nextRules[existingKey] = existingSeverity;
+	nextRules[ruleKey] = severity;
+	return {
+		...config,
+		rules: nextRules
+	};
+};
+const setCategorySeverity = (config, category, severity) => ({
+	...config,
+	categories: {
+		...config.categories,
+		[category]: severity
+	}
+});
+const addIgnoredTag = (config, tag) => {
+	const currentTags = config.ignore?.tags ?? [];
+	if (currentTags.includes(tag)) return config;
+	return {
+		...config,
+		ignore: {
+			...config.ignore,
+			tags: [...new Set([...currentTags, tag])].sort()
+		}
+	};
+};
+const removeIgnoredTag = (config, tag) => {
+	const currentTags = config.ignore?.tags ?? [];
+	if (!currentTags.includes(tag)) return config;
+	const remainingTags = currentTags.filter((existingTag) => existingTag !== tag);
+	const { tags: _removed, ...remainingIgnore } = config.ignore ?? {};
+	if (remainingTags.length === 0) {
+		if (Object.keys(remainingIgnore).length === 0) {
+			const { ignore: _ignore, ...configWithoutIgnore } = config;
+			return configWithoutIgnore;
+		}
+		return {
+			...config,
+			ignore: remainingIgnore
+		};
+	}
+	return {
+		...config,
+		ignore: {
+			...remainingIgnore,
+			tags: remainingTags
+		}
+	};
+};
+//#endregion
+//#region src/cli/commands/rules.ts
+const SEVERITY_VALUES = [
+	"off",
+	"warn",
+	"error"
+];
+const recordRulesInvocation = () => recordCount(METRIC.cliInvoked, 1, { command: "rules" });
+const resolveProjectRoot = (options) => {
+	const requestedDirectory = path$1.resolve(options.cwd ?? process.cwd());
+	return findNearestPackageDirectory(requestedDirectory) ?? requestedDirectory;
+};
+const parseSeverity = (value) => SEVERITY_VALUES.includes(value) ? value : null;
+const reportInvalidSeverity = (value) => {
+	cliLogger.error(`Invalid severity "${value}". Expected one of: ${SEVERITY_VALUES.join(", ")}.`);
+	process.exitCode = 1;
+};
+const reportRuleNotFound = (ruleQuery) => {
+	cliLogger.error(`Unknown rule "${ruleQuery}".`);
+	cliLogger.dim("  Run `react-doctor rules list` to see every available rule.");
+	process.exitCode = 1;
+};
+const describeTargetPath = (target) => {
+	const relativePath = path$1.relative(process.cwd(), target.filePath);
+	const displayPath = relativePath.length > 0 && !relativePath.startsWith("..") ? relativePath : target.filePath;
+	return target.exists ? displayPath : `${displayPath} ${highlighter.dim("(created)")}`;
+};
+const applyConfigChange = async (options, change) => {
+	const target = await resolveRuleConfigTarget(resolveProjectRoot(options));
+	const nextConfig = change(target.config);
+	const { written } = await writeRuleConfig(target, nextConfig);
+	return {
+		target,
+		nextConfig,
+		written
+	};
+};
+const reportManualEdit = (target, nextConfig) => {
+	const managed = {};
+	for (const key of [
+		"rules",
+		"categories",
+		"ignore"
+	]) if (nextConfig[key] !== void 0) managed[key] = nextConfig[key];
+	cliLogger.error(`Couldn't automatically edit ${describeTargetPath(target)} (dynamic config).`);
+	cliLogger.dim("  Apply this to your config's default export, then re-run:");
+	for (const line of JSON.stringify(managed, null, 2).split("\n")) cliLogger.dim(`  ${line}`);
+	process.exitCode = 1;
+};
+const rulesListAction = async (options) => {
+	recordRulesInvocation();
+	recordCount(METRIC.rulesQueried, 1, {
+		subcommand: "list",
+		hadFilter: Boolean(options.category || options.tag || options.framework || options.configured)
+	});
+	const catalog = buildRuleCatalog();
+	const config = validateConfigTypes((await resolveRuleConfigTarget(resolveProjectRoot(options))).config);
+	const categoryFilter = typeof options.category === "string" ? options.category.toLowerCase() : void 0;
+	const frameworkFilter = options.framework?.toLowerCase();
+	const rows = catalog.filter((entry) => {
+		if (categoryFilter && entry.category.toLowerCase() !== categoryFilter) return false;
+		if (frameworkFilter && entry.framework.toLowerCase() !== frameworkFilter) return false;
+		if (options.tag && !entry.tags.includes(options.tag)) return false;
+		return true;
+	}).map((entry) => ({
+		entry,
+		effective: resolveEffectiveRuleSeverity(config, entry)
+	})).filter((row) => options.configured ? row.effective.source !== "default" : true);
+	if (options.json) {
+		const payload = rows.map((row) => ({
+			key: row.entry.key,
+			id: row.entry.id,
+			category: row.entry.category,
+			framework: row.entry.framework,
+			tags: row.entry.tags,
+			defaultSeverity: row.entry.defaultSeverity,
+			defaultEnabled: row.entry.defaultEnabled,
+			severity: row.effective.value,
+			source: row.effective.source
+		}));
+		cliLogger.log(JSON.stringify(payload, null, 2));
+		return;
+	}
+	cliLogger.log(renderRuleCatalog(rows));
+};
+const rulesExplainAction = async (ruleQuery, options) => {
+	recordRulesInvocation();
+	recordCount(METRIC.rulesQueried, 1, { subcommand: "explain" });
+	const entry = findRuleInCatalog(buildRuleCatalog(), ruleQuery);
+	if (!entry) {
+		reportRuleNotFound(ruleQuery);
+		return;
+	}
+	const effective = resolveEffectiveRuleSeverity(validateConfigTypes((await resolveRuleConfigTarget(resolveProjectRoot(options))).config), entry);
+	if (options.json) {
+		cliLogger.log(JSON.stringify({
+			key: entry.key,
+			id: entry.id,
+			category: entry.category,
+			framework: entry.framework,
+			tags: entry.tags,
+			defaultSeverity: entry.defaultSeverity,
+			defaultEnabled: entry.defaultEnabled,
+			severity: effective.value,
+			source: effective.source,
+			recommendation: entry.recommendation ?? null,
+			learnMoreUrl: buildRuleDocsUrl("react-doctor", entry.id)
+		}, null, 2));
+		return;
+	}
+	cliLogger.log(renderRuleExplanation({
+		entry,
+		effective
+	}));
+};
+const setRuleSeverityAndReport = async (entry, severity, options, action) => {
+	const { target, nextConfig, written } = await applyConfigChange(options, (config) => setRuleSeverity(config, entry.key, severity));
+	if (!written) {
+		reportManualEdit(target, nextConfig);
+		return;
+	}
+	cliLogger.success(`Set ${entry.key} → ${severity}`);
+	cliLogger.dim(`  Updated ${describeTargetPath(target)}`);
+	recordCount(METRIC.rulesChanged, 1, {
+		action,
+		severity,
+		target: entry.key
+	});
+};
+const rulesSetAction = async (ruleQuery, severityValue, options) => {
+	recordRulesInvocation();
+	const severity = parseSeverity(severityValue);
+	if (!severity) {
+		reportInvalidSeverity(severityValue);
+		return;
+	}
+	const entry = findRuleInCatalog(buildRuleCatalog(), ruleQuery);
+	if (!entry) {
+		reportRuleNotFound(ruleQuery);
+		return;
+	}
+	await setRuleSeverityAndReport(entry, severity, options, "set");
+};
+const rulesEnableAction = async (ruleQuery, options) => {
+	recordRulesInvocation();
+	const entry = findRuleInCatalog(buildRuleCatalog(), ruleQuery);
+	if (!entry) {
+		reportRuleNotFound(ruleQuery);
+		return;
+	}
+	if (options.severity === void 0) {
+		await setRuleSeverityAndReport(entry, entry.defaultSeverity, options, "enable");
+		return;
+	}
+	const severity = parseSeverity(options.severity);
+	if (!severity) {
+		reportInvalidSeverity(options.severity);
+		return;
+	}
+	if (severity === "off") {
+		cliLogger.error("`enable` cannot set a rule to off. Use `react-doctor rules disable` instead.");
+		process.exitCode = 1;
+		return;
+	}
+	await setRuleSeverityAndReport(entry, severity, options, "enable");
+};
+const rulesDisableAction = async (ruleQuery, options) => {
+	recordRulesInvocation();
+	const entry = findRuleInCatalog(buildRuleCatalog(), ruleQuery);
+	if (!entry) {
+		reportRuleNotFound(ruleQuery);
+		return;
+	}
+	await setRuleSeverityAndReport(entry, "off", options, "disable");
+};
+const rulesCategoryAction = async (categoryQuery, severityValue, options) => {
+	recordRulesInvocation();
+	const severity = parseSeverity(severityValue);
+	if (!severity) {
+		reportInvalidSeverity(severityValue);
+		return;
+	}
+	const knownCategories = listRuleCategories(buildRuleCatalog());
+	const matchedCategory = knownCategories.find((category) => category.toLowerCase() === categoryQuery.toLowerCase());
+	if (!matchedCategory) {
+		cliLogger.error(`Unknown category "${categoryQuery}".`);
+		cliLogger.dim(`  Known categories: ${knownCategories.join(", ")}`);
+		process.exitCode = 1;
+		return;
+	}
+	const { target, nextConfig, written } = await applyConfigChange(options, (config) => setCategorySeverity(config, matchedCategory, severity));
+	if (!written) {
+		reportManualEdit(target, nextConfig);
+		return;
+	}
+	cliLogger.success(`Set category "${matchedCategory}" → ${severity}`);
+	cliLogger.dim(`  Updated ${describeTargetPath(target)}`);
+	recordCount(METRIC.rulesChanged, 1, {
+		action: "category",
+		severity,
+		target: matchedCategory
+	});
+};
+const rulesIgnoreTagAction = async (tag, options) => {
+	recordRulesInvocation();
+	const knownTags = listRuleTags(buildRuleCatalog());
+	if (!knownTags.includes(tag)) {
+		cliLogger.error(`Unknown tag "${tag}".`);
+		cliLogger.dim(`  Known tags: ${knownTags.join(", ")}`);
+		process.exitCode = 1;
+		return;
+	}
+	const { target, nextConfig, written } = await applyConfigChange(options, (config) => addIgnoredTag(config, tag));
+	if (!written) {
+		reportManualEdit(target, nextConfig);
+		return;
+	}
+	cliLogger.success(`Ignoring tag "${tag}" (rules with this tag are skipped before linting)`);
+	cliLogger.dim(`  Updated ${describeTargetPath(target)}`);
+	recordCount(METRIC.rulesChanged, 1, {
+		action: "ignoreTag",
+		target: tag
+	});
+};
+const rulesUnignoreTagAction = async (tag, options) => {
+	recordRulesInvocation();
+	const target = await resolveRuleConfigTarget(resolveProjectRoot(options));
+	if (!(target.config.ignore?.tags ?? []).includes(tag)) {
+		cliLogger.dim(`Tag "${tag}" was not being ignored; nothing to change.`);
+		return;
+	}
+	const nextConfig = removeIgnoredTag(target.config, tag);
+	const { written } = await writeRuleConfig(target, nextConfig);
+	if (!written) {
+		reportManualEdit(target, nextConfig);
+		return;
+	}
+	cliLogger.success(`Tag "${tag}" is no longer ignored`);
+	cliLogger.dim(`  Updated ${describeTargetPath(target)}`);
+	recordCount(METRIC.rulesChanged, 1, {
+		action: "unignoreTag",
+		target: tag
+	});
+};
+//#endregion
+export { rulesCategoryAction, rulesDisableAction, rulesEnableAction, rulesExplainAction, rulesIgnoreTagAction, rulesListAction, rulesSetAction, rulesUnignoreTagAction };
+
+//# sourceMappingURL=rules-DMV85h9u.js.map
+//# debugId=f3d834df-0000-55c9-ac64-c75a03f1b220

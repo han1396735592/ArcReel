@@ -1,0 +1,771 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="fe5615f2-65fb-5307-86b3-155d3fb24351")}catch(e){}}();
+import { u as METRIC } from "./constants-_b1h6lxa.js";
+import { Mt as highlighter, t as recordCount, u as enableJsonMode, y as CliInputError } from "./record-metric-AbxY4m3i.js";
+import { t as activeScanAbortRegistry } from "./active-scan-abort-registry-CCTgal0O.js";
+import { t as reportErrorToSentry } from "./report-error-D3uGbvdG.js";
+import { n as resetSentryRunState, r as withRunSpan } from "./with-run-span-353qeuiD.js";
+import { _ as RUNTIME_SCAN_SNAPSHOT_TIMEOUT_MS, b as RUNTIME_SCAN_TRACING_COMPLETE_TIMEOUT_MS, f as RUNTIME_SCAN_PROBE_RELATIVE_PATH, g as RUNTIME_SCAN_SAFE_CDP_PAGE_URLS, h as RUNTIME_SCAN_PROBE_SNAPSHOT_TOKEN_PLACEHOLDER, l as RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES, m as RUNTIME_SCAN_PROBE_SNAPSHOT_BINDING_NAME_PLACEHOLDER, n as RUNTIME_SCAN_BROWSER_WIDTH_PX, o as RUNTIME_SCAN_MAX_COMPONENT_EVENTS, p as RUNTIME_SCAN_PROBE_SNAPSHOT_ATTRIBUTE_NAME_PLACEHOLDER, r as RUNTIME_SCAN_CONTROL_CHARACTERS_PATTERN, s as RUNTIME_SCAN_MAX_RECORDING_DURATION_MS, t as sanitizeRuntimeUrl, v as RUNTIME_SCAN_TRACE_CATEGORIES, y as RUNTIME_SCAN_TRACE_FILE_EXTENSION } from "./sanitize-runtime-url-RZN3i1Kf.js";
+import { r as resolveTuiEnvironment, t as isTuiEnvironmentSupported } from "./should-use-tui-ZZii9Kea.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import * as os$1 from "node:os";
+import { randomUUID } from "node:crypto";
+import * as fsp from "node:fs/promises";
+import { createGzip } from "node:zlib";
+import { performance } from "node:perf_hooks";
+import { pipeline } from "node:stream/promises";
+import { chromium } from "playwright-core";
+import { Buffer as Buffer$1 } from "node:buffer";
+import * as readline from "node:readline/promises";
+//#region src/cli/runtime-scan/build-runtime-scan-report.ts
+const buildInteractions = (snapshot) => {
+	const interactionsById = /* @__PURE__ */ new Map();
+	for (const interaction of snapshot.interactions) {
+		const key = `${interaction.documentIndex ?? 0}:${interaction.interactionId}`;
+		const existing = interactionsById.get(key);
+		if (existing === void 0) {
+			interactionsById.set(key, { ...interaction });
+			continue;
+		}
+		existing.name = interaction.name;
+		existing.startTime = Math.min(existing.startTime, interaction.startTime);
+		existing.durationMs = Math.max(existing.durationMs, interaction.durationMs);
+		existing.processingStart = Math.min(existing.processingStart, interaction.processingStart);
+		existing.processingEnd = Math.max(existing.processingEnd, interaction.processingEnd);
+		existing.targetTag ??= interaction.targetTag;
+	}
+	return [...interactionsById.values()].sort((left, right) => left.startTime - right.startTime);
+};
+const buildScriptHotspots = (snapshot) => {
+	const hotspots = /* @__PURE__ */ new Map();
+	for (const longAnimationFrame of snapshot.longAnimationFrames) {
+		const hotspotKeysInFrame = /* @__PURE__ */ new Set();
+		for (const script of longAnimationFrame.scripts) {
+			const key = `${script.sourceUrl}\u0000${script.sourceFunctionName}\u0000${script.sourceCharPosition}\u0000${script.invoker}`;
+			const existing = hotspots.get(key);
+			if (existing === void 0) hotspots.set(key, {
+				sourceUrl: script.sourceUrl,
+				functionName: script.sourceFunctionName || "(anonymous)",
+				sourceCharPosition: script.sourceCharPosition,
+				invoker: script.invoker,
+				totalDurationMs: script.durationMs,
+				maxDurationMs: script.durationMs,
+				forcedStyleAndLayoutDurationMs: script.forcedStyleAndLayoutDurationMs,
+				frameCount: 1
+			});
+			else {
+				existing.totalDurationMs += script.durationMs;
+				existing.maxDurationMs = Math.max(existing.maxDurationMs, script.durationMs);
+				existing.forcedStyleAndLayoutDurationMs += script.forcedStyleAndLayoutDurationMs;
+				if (!hotspotKeysInFrame.has(key)) existing.frameCount += 1;
+			}
+			hotspotKeysInFrame.add(key);
+		}
+	}
+	return [...hotspots.values()].sort((left, right) => right.totalDurationMs - left.totalDurationMs).slice(0, 10);
+};
+const buildComponentHotspots = (snapshot) => {
+	const hotspots = /* @__PURE__ */ new Map();
+	for (const componentEvent of snapshot.componentEvents) {
+		const key = `${componentEvent.source}\u0000${componentEvent.name}`;
+		const existing = hotspots.get(key);
+		if (existing === void 0) {
+			hotspots.set(key, {
+				name: componentEvent.name,
+				source: componentEvent.source,
+				renderCount: 1,
+				totalDurationMs: componentEvent.durationMs,
+				maxDurationMs: componentEvent.durationMs
+			});
+			continue;
+		}
+		existing.renderCount += 1;
+		existing.totalDurationMs += componentEvent.durationMs;
+		existing.maxDurationMs = Math.max(existing.maxDurationMs, componentEvent.durationMs);
+	}
+	return [...hotspots.values()].sort((left, right) => right.totalDurationMs - left.totalDurationMs).slice(0, 10);
+};
+const buildWarnings = (snapshot) => {
+	const warnings = [];
+	if (!snapshot.support.reactDetected) warnings.push("No React renderer was detected during the recording.");
+	else if (!snapshot.support.nativeReactTracks && !snapshot.support.bippyComponentTracks) warnings.push("React component timings were unavailable. Production builds require react-dom/profiling.");
+	if (!snapshot.support.loaf) warnings.push("Long Animation Frame entries are unavailable in this browser.");
+	if (snapshot.droppedLongAnimationFrames > 0 || snapshot.droppedScriptTimings > 0 || snapshot.droppedComponentEvents > 0 || snapshot.droppedInteractions > 0) warnings.push(`The bounded probe dropped ${snapshot.droppedLongAnimationFrames} frames, ${snapshot.droppedScriptTimings} script timings, ${snapshot.droppedComponentEvents} component events, and ${snapshot.droppedInteractions} interactions.`);
+	if (snapshot.longAnimationFrames.flatMap((longAnimationFrame) => longAnimationFrame.scripts).find((script) => script.durationMs > 0 && script.forcedStyleAndLayoutDurationMs / script.durationMs >= .25) !== void 0) warnings.push("At least one long frame was substantially dominated by forced style and layout.");
+	return warnings;
+};
+const buildRuntimeScanReport = (input) => {
+	const longAnimationFrames = [...input.snapshot.longAnimationFrames].sort((left, right) => right.durationMs - left.durationMs);
+	const interactions = buildInteractions(input.snapshot);
+	const interactionDurations = interactions.map((interaction) => interaction.durationMs);
+	return {
+		schemaVersion: 1,
+		kind: "react-doctor-runtime-scan",
+		requestedUrl: sanitizeRuntimeUrl(input.requestedUrl),
+		finalUrl: sanitizeRuntimeUrl(input.snapshot.finalUrl),
+		tracePath: input.tracePath,
+		capturedAt: input.capturedAt,
+		timeOrigin: input.snapshot.timeOrigin,
+		connection: input.connection,
+		support: input.snapshot.support,
+		summary: {
+			durationMs: input.durationMs,
+			longAnimationFrameCount: longAnimationFrames.length,
+			worstFrameDurationMs: longAnimationFrames[0]?.durationMs ?? 0,
+			totalBlockingDurationMs: longAnimationFrames.reduce((total, longAnimationFrame) => total + longAnimationFrame.blockingDurationMs, 0),
+			interactionCount: interactions.length,
+			worstInteractionDurationMs: interactionDurations.length === 0 ? 0 : Math.max(...interactionDurations),
+			cumulativeLayoutShift: input.snapshot.cumulativeLayoutShift,
+			largestContentfulPaintMs: input.snapshot.largestContentfulPaintMs
+		},
+		scriptHotspots: buildScriptHotspots(input.snapshot),
+		componentHotspots: buildComponentHotspots(input.snapshot),
+		longAnimationFrames,
+		interactions,
+		warnings: buildWarnings(input.snapshot)
+	};
+};
+//#endregion
+//#region src/cli/runtime-scan/sanitize-runtime-text.ts
+const sanitizeRuntimeText = (value) => value.replace(RUNTIME_SCAN_CONTROL_CHARACTERS_PATTERN, "");
+//#endregion
+//#region src/cli/runtime-scan/format-runtime-scan-report.ts
+const formatMilliseconds = (durationMs) => `${durationMs.toFixed(1)}ms`;
+const formatTextReport = (report) => {
+	const lines = [
+		`${highlighter.success("✔")} Runtime trace captured`,
+		highlighter.dim(`  ${sanitizeRuntimeText(report.finalUrl)}`),
+		"",
+		`${highlighter.info("Trace")} ${sanitizeRuntimeText(report.tracePath)}`,
+		`${highlighter.info("Browser")} ${report.connection === "cdp" ? "attached over CDP" : "isolated profile"} · ${formatMilliseconds(report.summary.durationMs)} captured`,
+		`${highlighter.info("React")} ${report.support.reactDetected ? `${sanitizeRuntimeText(report.support.reactVersion ?? "unknown")} (${sanitizeRuntimeText(report.support.reactBuildType ?? "unknown")})` : "not detected"}`,
+		"",
+		highlighter.info("Performance"),
+		`  ├─ ${report.summary.longAnimationFrameCount} long animation frame${report.summary.longAnimationFrameCount === 1 ? "" : "s"}; worst ${formatMilliseconds(report.summary.worstFrameDurationMs)}`,
+		`  ├─ ${formatMilliseconds(report.summary.totalBlockingDurationMs)} total blocking time`,
+		`  ├─ ${report.summary.interactionCount} interaction${report.summary.interactionCount === 1 ? "" : "s"}; worst ${formatMilliseconds(report.summary.worstInteractionDurationMs)}`,
+		`  ├─ CLS ${report.summary.cumulativeLayoutShift.toFixed(1)}`,
+		`  └─ LCP ${report.summary.largestContentfulPaintMs === null ? "unavailable" : formatMilliseconds(report.summary.largestContentfulPaintMs)}`
+	];
+	if (report.scriptHotspots.length > 0) {
+		lines.push("", highlighter.info("Script hotspots"));
+		for (const [index, hotspot] of report.scriptHotspots.entries()) {
+			const prefix = index === report.scriptHotspots.length - 1 ? "└─" : "├─";
+			const sourceLocation = hotspot.sourceCharPosition > 0 ? `${sanitizeRuntimeText(hotspot.sourceUrl)} @ char ${hotspot.sourceCharPosition}` : sanitizeRuntimeText(hotspot.sourceUrl);
+			const location = sourceLocation ? `${sourceLocation}${hotspot.functionName ? ` · ${sanitizeRuntimeText(hotspot.functionName)}` : ""}` : sanitizeRuntimeText(hotspot.functionName);
+			lines.push(`  ${prefix} ${formatMilliseconds(hotspot.totalDurationMs)} ${location}`, `     ${hotspot.frameCount} frame${hotspot.frameCount === 1 ? "" : "s"}, ${formatMilliseconds(hotspot.forcedStyleAndLayoutDurationMs)} forced layout`);
+		}
+	}
+	if (report.componentHotspots.length > 0) {
+		lines.push("", highlighter.info("React component hotspots"));
+		for (const [index, hotspot] of report.componentHotspots.entries()) {
+			const prefix = index === report.componentHotspots.length - 1 ? "└─" : "├─";
+			lines.push(`  ${prefix} ${sanitizeRuntimeText(hotspot.name)} · ${formatMilliseconds(hotspot.totalDurationMs)} across ${hotspot.renderCount} render${hotspot.renderCount === 1 ? "" : "s"}`);
+		}
+	}
+	if (report.warnings.length > 0) {
+		lines.push("", highlighter.warn("Limitations"));
+		for (const warning of report.warnings) lines.push(`  - ${sanitizeRuntimeText(warning)}`);
+	}
+	return `${lines.join("\n")}\n`;
+};
+const formatJsonlReport = (report) => {
+	return `${[
+		{
+			schemaVersion: report.schemaVersion,
+			kind: "metadata",
+			data: {
+				requestedUrl: report.requestedUrl,
+				finalUrl: report.finalUrl,
+				tracePath: report.tracePath,
+				capturedAt: report.capturedAt,
+				timeOrigin: report.timeOrigin,
+				connection: report.connection,
+				support: report.support,
+				warnings: report.warnings
+			}
+		},
+		{
+			schemaVersion: report.schemaVersion,
+			kind: "summary",
+			data: report.summary
+		},
+		...report.scriptHotspots.map((scriptHotspot) => ({
+			schemaVersion: report.schemaVersion,
+			kind: "script-hotspot",
+			data: scriptHotspot
+		})),
+		...report.componentHotspots.map((componentHotspot) => ({
+			schemaVersion: report.schemaVersion,
+			kind: "component-hotspot",
+			data: componentHotspot
+		})),
+		...report.longAnimationFrames.map((longAnimationFrame) => ({
+			schemaVersion: report.schemaVersion,
+			kind: "long-animation-frame",
+			data: longAnimationFrame
+		})),
+		...report.interactions.map((interaction) => ({
+			schemaVersion: report.schemaVersion,
+			kind: "interaction",
+			data: interaction
+		}))
+	].map((record) => JSON.stringify(record)).join("\n")}\n`;
+};
+const formatRuntimeScanReport = (report, format) => {
+	if (format === "json") return `${JSON.stringify(report, null, 2)}\n`;
+	if (format === "jsonl") return formatJsonlReport(report);
+	return formatTextReport(report);
+};
+//#endregion
+//#region src/cli/runtime-scan/assert-runtime-scan-cdp-profile.ts
+const safeCdpPageUrls = new Set(RUNTIME_SCAN_SAFE_CDP_PAGE_URLS);
+const assertRuntimeScanCdpProfile = (pageUrls) => {
+	if (pageUrls.every((pageUrl) => safeCdpPageUrls.has(pageUrl))) return;
+	throw new CliInputError("Chrome performance tracing includes every open tab. Close all tabs in the dedicated debug profile and retry; a blank new tab can stay open.");
+};
+//#endregion
+//#region src/cli/runtime-scan/assert-runtime-scan-interactive.ts
+const assertRuntimeScanInteractive = () => {
+	if (process.stdin.isTTY === true) return;
+	throw new CliInputError("`react-doctor scan <url>` requires an interactive terminal. Run it directly, interact with Chrome, then press Enter to stop recording.");
+};
+//#endregion
+//#region src/cli/runtime-scan/merge-runtime-scan-probe-snapshots.ts
+const shiftOptionalTimestamp = (timestamp, offset) => timestamp === 0 ? 0 : timestamp + offset;
+const takeLatestEntries = (entries, limit) => [...entries].sort((left, right) => left.startTime - right.startTime).slice(-limit);
+const shiftLongAnimationFrame = (frame, offset) => ({
+	...frame,
+	startTime: frame.startTime + offset,
+	renderStart: shiftOptionalTimestamp(frame.renderStart, offset),
+	styleAndLayoutStart: shiftOptionalTimestamp(frame.styleAndLayoutStart, offset),
+	firstUiEventTimestamp: shiftOptionalTimestamp(frame.firstUiEventTimestamp, offset),
+	scripts: frame.scripts.map((script) => ({
+		...script,
+		executionStart: shiftOptionalTimestamp(script.executionStart, offset)
+	}))
+});
+const shiftComponentEvent = (componentEvent, offset) => ({
+	...componentEvent,
+	startTime: componentEvent.startTime + offset
+});
+const shiftInteraction = (interaction, offset, documentIndex) => ({
+	...interaction,
+	startTime: interaction.startTime + offset,
+	processingStart: interaction.processingStart + offset,
+	processingEnd: interaction.processingEnd + offset,
+	documentIndex
+});
+const mergeRuntimeScanProbeSnapshots = (capturedSnapshots) => {
+	const snapshotsByTimeOrigin = /* @__PURE__ */ new Map();
+	for (const snapshot of capturedSnapshots) {
+		snapshotsByTimeOrigin.delete(snapshot.timeOrigin);
+		snapshotsByTimeOrigin.set(snapshot.timeOrigin, snapshot);
+	}
+	const snapshots = [...snapshotsByTimeOrigin.values()];
+	const finalSnapshot = snapshots.at(-1);
+	if (finalSnapshot === void 0) throw new Error("At least one runtime scan probe snapshot is required.");
+	const timeOrigin = Math.min(...snapshots.map((snapshot) => snapshot.timeOrigin));
+	const documentIndexByTimeOrigin = /* @__PURE__ */ new Map();
+	const snapshotsInCreationOrder = [...snapshots].sort((left, right) => left.timeOrigin - right.timeOrigin);
+	for (const [documentIndex, snapshot] of snapshotsInCreationOrder.entries()) documentIndexByTimeOrigin.set(snapshot.timeOrigin, documentIndex);
+	const longAnimationFrames = snapshots.flatMap((snapshot) => {
+		const offset = snapshot.timeOrigin - timeOrigin;
+		return snapshot.longAnimationFrames.map((frame) => shiftLongAnimationFrame(frame, offset));
+	});
+	const componentEvents = snapshots.flatMap((snapshot) => {
+		const offset = snapshot.timeOrigin - timeOrigin;
+		return snapshot.componentEvents.map((componentEvent) => shiftComponentEvent(componentEvent, offset));
+	});
+	const interactions = snapshots.flatMap((snapshot) => {
+		const offset = snapshot.timeOrigin - timeOrigin;
+		const documentIndex = documentIndexByTimeOrigin.get(snapshot.timeOrigin) ?? 0;
+		return snapshot.interactions.map((interaction) => shiftInteraction(interaction, offset, documentIndex));
+	});
+	const latestReactSnapshot = [...snapshots].reverse().find((snapshot) => snapshot.support.reactDetected);
+	return {
+		timeOrigin,
+		finalUrl: finalSnapshot.finalUrl,
+		support: {
+			reactDetected: snapshots.some((snapshot) => snapshot.support.reactDetected),
+			reactVersion: latestReactSnapshot?.support.reactVersion ?? null,
+			reactBuildType: latestReactSnapshot?.support.reactBuildType ?? null,
+			nativeReactTracks: snapshots.some((snapshot) => snapshot.support.nativeReactTracks),
+			bippyComponentTracks: snapshots.some((snapshot) => snapshot.support.bippyComponentTracks),
+			loaf: snapshots.some((snapshot) => snapshot.support.loaf)
+		},
+		longAnimationFrames: takeLatestEntries(longAnimationFrames, 100),
+		componentEvents: takeLatestEntries(componentEvents, RUNTIME_SCAN_MAX_COMPONENT_EVENTS),
+		interactions: takeLatestEntries(interactions, 500),
+		cumulativeLayoutShift: Math.max(...snapshots.map((snapshot) => snapshot.cumulativeLayoutShift)),
+		largestContentfulPaintMs: finalSnapshot.largestContentfulPaintMs,
+		droppedLongAnimationFrames: snapshots.reduce((total, snapshot) => total + snapshot.droppedLongAnimationFrames, 0) + Math.max(0, longAnimationFrames.length - 100),
+		droppedScriptTimings: snapshots.reduce((total, snapshot) => total + snapshot.droppedScriptTimings, 0),
+		droppedComponentEvents: snapshots.reduce((total, snapshot) => total + snapshot.droppedComponentEvents, 0) + Math.max(0, componentEvents.length - RUNTIME_SCAN_MAX_COMPONENT_EVENTS),
+		droppedInteractions: snapshots.reduce((total, snapshot) => total + snapshot.droppedInteractions, 0) + Math.max(0, interactions.length - 500)
+	};
+};
+//#endregion
+//#region src/cli/runtime-scan/parse-runtime-scan-snapshot-payload.ts
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+const isBoundedString = (value) => typeof value === "string" && value.length <= 4096;
+const isNullableBoundedString = (value) => value === null || isBoundedString(value);
+const isSanitizedRuntimeUrl = (value) => {
+	if (!isBoundedString(value) || !URL.canParse(value)) return false;
+	const parsedUrl = new URL(value);
+	return (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") && parsedUrl.username === "" && parsedUrl.password === "" && parsedUrl.search === "" && parsedUrl.hash === "";
+};
+const isNonNegativeFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+const isNonNegativeSafeInteger = (value) => Number.isSafeInteger(value) && isNonNegativeFiniteNumber(value);
+const isSourceCharPosition = (value) => value === -1 || isNonNegativeSafeInteger(value);
+const isSnapshotWithinByteLimit = (value) => {
+	try {
+		const serializedSnapshot = JSON.stringify(value);
+		return serializedSnapshot !== void 0 && Buffer$1.byteLength(serializedSnapshot) <= 5177344;
+	} catch {
+		return false;
+	}
+};
+const isScriptTiming = (value) => isRecord(value) && isBoundedString(value.invoker) && isBoundedString(value.invokerType) && isBoundedString(value.sourceUrl) && isBoundedString(value.sourceFunctionName) && isSourceCharPosition(value.sourceCharPosition) && isNonNegativeFiniteNumber(value.executionStart) && isNonNegativeFiniteNumber(value.durationMs) && isNonNegativeFiniteNumber(value.forcedStyleAndLayoutDurationMs) && isNonNegativeFiniteNumber(value.pauseDurationMs);
+const isLongAnimationFrame = (value) => isRecord(value) && isNonNegativeFiniteNumber(value.startTime) && isNonNegativeFiniteNumber(value.durationMs) && isNonNegativeFiniteNumber(value.blockingDurationMs) && isNonNegativeFiniteNumber(value.renderStart) && isNonNegativeFiniteNumber(value.styleAndLayoutStart) && isNonNegativeFiniteNumber(value.firstUiEventTimestamp) && Array.isArray(value.scripts) && value.scripts.length <= 100 && value.scripts.every(isScriptTiming);
+const isComponentEvent = (value) => isRecord(value) && isBoundedString(value.name) && isNonNegativeFiniteNumber(value.startTime) && isNonNegativeFiniteNumber(value.durationMs) && isNonNegativeSafeInteger(value.depth) && (value.source === "native" || value.source === "bippy");
+const isInteraction = (value) => isRecord(value) && isBoundedString(value.name) && isNonNegativeFiniteNumber(value.startTime) && isNonNegativeFiniteNumber(value.durationMs) && isNonNegativeFiniteNumber(value.processingStart) && isNonNegativeFiniteNumber(value.processingEnd) && isNonNegativeSafeInteger(value.interactionId) && (value.documentIndex === void 0 || isNonNegativeSafeInteger(value.documentIndex)) && isNullableBoundedString(value.targetTag);
+const isRuntimeScanProbeSnapshot = (value) => isRecord(value) && isNonNegativeFiniteNumber(value.timeOrigin) && isSanitizedRuntimeUrl(value.finalUrl) && isRecord(value.support) && typeof value.support.reactDetected === "boolean" && isNullableBoundedString(value.support.reactVersion) && (value.support.reactBuildType === null || value.support.reactBuildType === "development" || value.support.reactBuildType === "production") && typeof value.support.nativeReactTracks === "boolean" && typeof value.support.bippyComponentTracks === "boolean" && typeof value.support.loaf === "boolean" && Array.isArray(value.longAnimationFrames) && value.longAnimationFrames.length <= 100 && value.longAnimationFrames.every(isLongAnimationFrame) && Array.isArray(value.componentEvents) && value.componentEvents.length <= 2e3 && value.componentEvents.every(isComponentEvent) && Array.isArray(value.interactions) && value.interactions.length <= 500 && value.interactions.every(isInteraction) && isNonNegativeFiniteNumber(value.cumulativeLayoutShift) && (value.largestContentfulPaintMs === null || isNonNegativeFiniteNumber(value.largestContentfulPaintMs)) && isNonNegativeSafeInteger(value.droppedLongAnimationFrames) && isNonNegativeSafeInteger(value.droppedScriptTimings) && isNonNegativeSafeInteger(value.droppedComponentEvents) && isNonNegativeSafeInteger(value.droppedInteractions) && isSnapshotWithinByteLimit(value);
+const parseRuntimeScanSnapshotPayload = (payload, expectedToken) => {
+	if (Buffer$1.byteLength(payload) > 5242880) return null;
+	try {
+		const envelope = JSON.parse(payload);
+		if (!isRecord(envelope) || envelope.token !== expectedToken || !isRuntimeScanProbeSnapshot(envelope.snapshot)) return null;
+		return envelope.snapshot;
+	} catch {
+		return null;
+	}
+};
+//#endregion
+//#region src/cli/runtime-scan/resolve-runtime-trace-path.ts
+const resolveRuntimeTracePath = (traceOut, capturedAt) => {
+	if (traceOut !== void 0) return path$1.resolve(traceOut);
+	const timestamp = capturedAt.toISOString().replaceAll(/[:.]/g, "-");
+	return path$1.join(os$1.tmpdir(), `react-doctor-runtime-${timestamp}-${randomUUID()}${RUNTIME_SCAN_TRACE_FILE_EXTENSION}`);
+};
+//#endregion
+//#region src/cli/runtime-scan/wait-for-runtime-scan-stop.ts
+const waitForRuntimeScanStop = async () => {
+	assertRuntimeScanInteractive();
+	const interfaceHandle = readline.createInterface({
+		input: process.stdin,
+		output: process.stderr,
+		terminal: true
+	});
+	const timeoutController = new AbortController();
+	const timeoutHandle = setTimeout(() => timeoutController.abort(), RUNTIME_SCAN_MAX_RECORDING_DURATION_MS);
+	try {
+		await interfaceHandle.question("Recording runtime performance. Interact with the page, then press Enter to stop.\n", { signal: timeoutController.signal }).catch((cause) => {
+			if (!timeoutController.signal.aborted) throw cause;
+		});
+	} finally {
+		clearTimeout(timeoutHandle);
+		interfaceHandle.close();
+	}
+};
+//#endregion
+//#region src/cli/runtime-scan/record-runtime-trace.ts
+const resolveProbePath = () => {
+	const probePath = [path$1.join(import.meta.dirname, RUNTIME_SCAN_PROBE_RELATIVE_PATH), path$1.resolve(import.meta.dirname, "../../../dist", RUNTIME_SCAN_PROBE_RELATIVE_PATH)].find((candidate) => fs$1.existsSync(candidate));
+	if (probePath === void 0) throw new Error("The runtime scan browser probe is missing. Rebuild react-doctor and retry.");
+	return probePath;
+};
+const buildSnapshotRelaySource = (attributeName, bindingName) => `
+(() => {
+  let didRelaySnapshot = false;
+  const getSnapshotAttribute = Element.prototype.getAttribute;
+  const removeSnapshotAttribute = Element.prototype.removeAttribute;
+  const relaySnapshot = () => {
+    const documentElement = document.documentElement;
+    if (documentElement === null) return;
+    const payload = getSnapshotAttribute.call(documentElement, ${JSON.stringify(attributeName)});
+    removeSnapshotAttribute.call(documentElement, ${JSON.stringify(attributeName)});
+    if (
+      didRelaySnapshot ||
+      typeof payload !== "string" ||
+      payload.length > ${RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES}
+    ) return;
+    if (new TextEncoder().encode(payload).byteLength > ${RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES}) return;
+    const captureBinding = Reflect.get(globalThis, ${JSON.stringify(bindingName)});
+    if (typeof captureBinding !== "function") return;
+    didRelaySnapshot = true;
+    captureBinding(payload);
+  };
+  new MutationObserver(relaySnapshot).observe(document, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: [${JSON.stringify(attributeName)}],
+  });
+})();
+`;
+const readProbeSnapshot = async (page) => {
+	let timeoutHandle;
+	const snapshotTimeout = new Promise((resolve) => {
+		timeoutHandle = setTimeout(() => resolve(null), RUNTIME_SCAN_SNAPSHOT_TIMEOUT_MS);
+	});
+	try {
+		const snapshot = await Promise.race([page.evaluate(() => window.__REACT_DOCTOR_RUNTIME_SCAN__?.snapshot()).catch(() => null), snapshotTimeout]);
+		return isRuntimeScanProbeSnapshot(snapshot) ? snapshot : null;
+	} finally {
+		if (timeoutHandle !== void 0) clearTimeout(timeoutHandle);
+	}
+};
+const createFallbackSnapshot = (timeOrigin, finalUrl) => ({
+	timeOrigin,
+	finalUrl,
+	support: {
+		reactDetected: false,
+		reactVersion: null,
+		reactBuildType: null,
+		nativeReactTracks: false,
+		bippyComponentTracks: false,
+		loaf: false
+	},
+	longAnimationFrames: [],
+	componentEvents: [],
+	interactions: [],
+	cumulativeLayoutShift: 0,
+	largestContentfulPaintMs: null,
+	droppedLongAnimationFrames: 0,
+	droppedScriptTimings: 0,
+	droppedComponentEvents: 0,
+	droppedInteractions: 0
+});
+const startDevtoolsTrace = async (cdpSession) => {
+	try {
+		await cdpSession.send("Tracing.start", {
+			categories: RUNTIME_SCAN_TRACE_CATEGORIES.join(","),
+			transferMode: "ReturnAsStream"
+		});
+	} catch (cause) {
+		const message = cause instanceof Error ? cause.message : String(cause);
+		if (/Tracing (?:has )?already (?:been )?started/i.test(message)) throw new CliInputError("Chrome is already recording a performance trace. Stop the existing DevTools recording and retry.");
+		throw cause;
+	}
+};
+const endDevtoolsTrace = async (cdpSession, timeoutMs = RUNTIME_SCAN_TRACING_COMPLETE_TIMEOUT_MS) => {
+	const traceComplete = new Promise((resolve) => {
+		cdpSession.once("Tracing.tracingComplete", resolve);
+	});
+	let timeoutHandle;
+	const traceTimeout = new Promise((_resolve, reject) => {
+		timeoutHandle = setTimeout(() => {
+			reject(new CliInputError("Chrome did not finalize the performance trace within 60 seconds. Record a shorter interaction and retry."));
+		}, timeoutMs);
+	});
+	let stream;
+	try {
+		const finishTrace = async () => {
+			await cdpSession.send("Tracing.end");
+			return traceComplete;
+		};
+		({stream} = await Promise.race([finishTrace(), traceTimeout]));
+	} finally {
+		if (timeoutHandle !== void 0) clearTimeout(timeoutHandle);
+	}
+	if (stream === void 0) throw new Error("Chrome returned a trace without a data stream.");
+	return stream;
+};
+const readDevtoolsTrace = async function* (cdpSession, stream) {
+	let isComplete = false;
+	let traceBytes = 0;
+	try {
+		while (!isComplete) {
+			const result = await cdpSession.send("IO.read", { handle: stream });
+			const chunk = Buffer.from(result.data, result.base64Encoded === true ? "base64" : "utf8");
+			traceBytes += chunk.byteLength;
+			if (traceBytes > 536870912) throw new CliInputError("The DevTools trace exceeded the 512 MB safety limit. Record a shorter, focused interaction and retry.");
+			yield chunk;
+			isComplete = result.eof === true;
+		}
+	} finally {
+		await cdpSession.send("IO.close", { handle: stream }).catch(() => {});
+	}
+};
+const writeDevtoolsTrace = async (cdpSession, stream, tracePath) => {
+	await fsp.mkdir(path$1.dirname(tracePath), { recursive: true });
+	const temporaryTracePath = `${tracePath}.${randomUUID()}.tmp`;
+	let didMoveTrace = false;
+	try {
+		await pipeline(readDevtoolsTrace(cdpSession, stream), createGzip(), fs$1.createWriteStream(temporaryTracePath, {
+			flags: "wx",
+			mode: 384,
+			flush: true
+		}));
+		await fsp.rename(temporaryTracePath, tracePath);
+		didMoveTrace = true;
+	} finally {
+		if (!didMoveTrace) await fsp.rm(temporaryTracePath, { force: true }).catch(() => {});
+	}
+};
+const connectToBrowser = async (cdpUrl) => {
+	try {
+		if (cdpUrl !== void 0) return {
+			browser: await chromium.connectOverCDP(cdpUrl),
+			connection: "cdp"
+		};
+		return {
+			browser: await chromium.launch({
+				channel: "chrome",
+				headless: false,
+				args: ["--no-first-run", "--no-default-browser-check"]
+			}),
+			connection: "isolated"
+		};
+	} catch {
+		throw new CliInputError(`Could not connect to Chrome. ${cdpUrl === void 0 ? "Install Google Chrome, or pass --cdp <url> for a browser started with remote debugging." : "Confirm the browser is running with remote debugging and that the CDP URL is reachable."}`);
+	}
+};
+const navigateToRuntimeUrl = async (page, url) => {
+	try {
+		await page.goto(url, { waitUntil: "load" });
+	} catch {
+		throw new CliInputError("Could not load the target URL. Confirm the app is running and reachable from Chrome.");
+	}
+};
+const recordRuntimeTrace = async (input) => {
+	const sanitizedRequestedUrl = sanitizeRuntimeUrl(input.url);
+	assertRuntimeScanInteractive();
+	const tracePath = resolveRuntimeTracePath(input.traceOut, /* @__PURE__ */ new Date());
+	const snapshotIdentifier = randomUUID().replaceAll("-", "");
+	const snapshotBindingName = `${RUNTIME_SCAN_PROBE_SNAPSHOT_BINDING_NAME_PLACEHOLDER}_${snapshotIdentifier}`;
+	const snapshotAttributeName = `${RUNTIME_SCAN_PROBE_SNAPSHOT_ATTRIBUTE_NAME_PLACEHOLDER}-${snapshotIdentifier}`;
+	const snapshotRelayWorldName = `react-doctor-runtime-scan-${snapshotIdentifier}`;
+	const snapshotToken = randomUUID();
+	const probeSource = (await fsp.readFile(resolveProbePath(), "utf8")).replaceAll(RUNTIME_SCAN_PROBE_SNAPSHOT_ATTRIBUTE_NAME_PLACEHOLDER, snapshotAttributeName).replaceAll(RUNTIME_SCAN_PROBE_SNAPSHOT_TOKEN_PLACEHOLDER, snapshotToken);
+	const snapshotRelaySource = buildSnapshotRelaySource(snapshotAttributeName, snapshotBindingName);
+	const { browser, connection } = await connectToBrowser(input.cdpUrl);
+	const navigationSnapshotsByTimeOrigin = /* @__PURE__ */ new Map();
+	const discardedSnapshotEvidence = {
+		droppedLongAnimationFrames: 0,
+		droppedScriptTimings: 0,
+		droppedComponentEvents: 0,
+		droppedInteractions: 0
+	};
+	const scanPages = /* @__PURE__ */ new Set();
+	const pageSetupPromises = /* @__PURE__ */ new Map();
+	let context;
+	let page;
+	let latestPage;
+	let traceCdpSession;
+	let didCreateContext = false;
+	let isTracing = false;
+	let traceStreamPromise;
+	let cleanupPromise;
+	let preexistingCdpPages = [];
+	const storeNavigationSnapshot = (snapshot) => {
+		if (!navigationSnapshotsByTimeOrigin.delete(snapshot.timeOrigin) && navigationSnapshotsByTimeOrigin.size >= 10) {
+			const oldestTimeOrigin = navigationSnapshotsByTimeOrigin.keys().next().value;
+			if (oldestTimeOrigin !== void 0) {
+				const discardedSnapshot = navigationSnapshotsByTimeOrigin.get(oldestTimeOrigin);
+				if (discardedSnapshot !== void 0) {
+					discardedSnapshotEvidence.droppedLongAnimationFrames += discardedSnapshot.longAnimationFrames.length + discardedSnapshot.droppedLongAnimationFrames;
+					discardedSnapshotEvidence.droppedScriptTimings += discardedSnapshot.longAnimationFrames.reduce((scriptCount, longAnimationFrame) => scriptCount + longAnimationFrame.scripts.length, 0) + discardedSnapshot.droppedScriptTimings;
+					discardedSnapshotEvidence.droppedComponentEvents += discardedSnapshot.componentEvents.length + discardedSnapshot.droppedComponentEvents;
+					discardedSnapshotEvidence.droppedInteractions += discardedSnapshot.interactions.length + discardedSnapshot.droppedInteractions;
+				}
+				navigationSnapshotsByTimeOrigin.delete(oldestTimeOrigin);
+			}
+		}
+		navigationSnapshotsByTimeOrigin.set(snapshot.timeOrigin, snapshot);
+	};
+	const initializeRuntimeScanPage = async (runtimePage) => {
+		if (context === void 0) throw new Error("The runtime scan browser context is unavailable.");
+		const cdpSession = await context.newCDPSession(runtimePage);
+		await cdpSession.send("Page.enable");
+		cdpSession.on("Runtime.bindingCalled", (event) => {
+			if (event.name !== snapshotBindingName) return;
+			const snapshot = parseRuntimeScanSnapshotPayload(event.payload, snapshotToken);
+			if (snapshot !== null) storeNavigationSnapshot(snapshot);
+		});
+		await cdpSession.send("Runtime.enable");
+		await cdpSession.send("Runtime.addBinding", {
+			name: snapshotBindingName,
+			executionContextName: snapshotRelayWorldName
+		});
+		await cdpSession.send("Page.addScriptToEvaluateOnNewDocument", {
+			source: snapshotRelaySource,
+			worldName: snapshotRelayWorldName
+		});
+		const frameTree = await cdpSession.send("Page.getFrameTree");
+		const isolatedWorld = await cdpSession.send("Page.createIsolatedWorld", {
+			frameId: frameTree.frameTree.frame.id,
+			worldName: snapshotRelayWorldName
+		});
+		await cdpSession.send("Runtime.evaluate", {
+			expression: snapshotRelaySource,
+			contextId: isolatedWorld.executionContextId
+		});
+	};
+	const registerRuntimeScanPage = (runtimePage) => {
+		latestPage = runtimePage;
+		scanPages.add(runtimePage);
+		const existingSetup = pageSetupPromises.get(runtimePage);
+		if (existingSetup !== void 0) return existingSetup;
+		const setupPromise = initializeRuntimeScanPage(runtimePage);
+		pageSetupPromises.set(runtimePage, setupPromise);
+		setupPromise.catch(() => {});
+		return setupPromise;
+	};
+	const stopTracing = async () => {
+		if (!isTracing || traceCdpSession === void 0) return;
+		try {
+			traceStreamPromise ??= endDevtoolsTrace(traceCdpSession);
+			const traceStream = await traceStreamPromise;
+			isTracing = false;
+			await traceCdpSession.send("IO.close", { handle: traceStream });
+		} catch {}
+	};
+	const closeBrowserResources = async () => {
+		await Promise.all([...scanPages].map((runtimePage) => runtimePage.close().catch(() => {})));
+		if (connection === "cdp" && didCreateContext) await context?.close().catch(() => {});
+		await browser.close().catch(() => {});
+	};
+	const cleanup = () => {
+		cleanupPromise ??= stopTracing().then(closeBrowserResources);
+		return cleanupPromise;
+	};
+	const unregisterCleanup = activeScanAbortRegistry.registerCleanup(cleanup);
+	try {
+		if (connection === "cdp") {
+			preexistingCdpPages = browser.contexts().flatMap((browserContext) => browserContext.pages());
+			assertRuntimeScanCdpProfile(preexistingCdpPages.map((browserPage) => browserPage.url()));
+			context = browser.contexts()[0];
+		}
+		if (context === void 0) {
+			context = await browser.newContext({ viewport: {
+				width: RUNTIME_SCAN_BROWSER_WIDTH_PX,
+				height: 900
+			} });
+			didCreateContext = true;
+		}
+		context.on("page", (runtimePage) => {
+			registerRuntimeScanPage(runtimePage);
+		});
+		await context.addInitScript({ content: probeSource });
+		page = await context.newPage();
+		if (connection === "cdp") await Promise.all(preexistingCdpPages.map(async (browserPage) => {
+			if (!browserPage.isClosed()) await browserPage.close();
+		}));
+		await registerRuntimeScanPage(page);
+		traceCdpSession = await browser.newBrowserCDPSession();
+		await startDevtoolsTrace(traceCdpSession);
+		isTracing = true;
+		const capturedAt = (/* @__PURE__ */ new Date()).toISOString();
+		const recordingStartedAt = performance.now();
+		await navigateToRuntimeUrl(page, input.url);
+		await waitForRuntimeScanStop();
+		const durationMs = performance.now() - recordingStartedAt;
+		await Promise.allSettled([...pageSetupPromises.values()]);
+		const finalSnapshotsPromise = Promise.all([...scanPages].map(readProbeSnapshot));
+		traceStreamPromise = endDevtoolsTrace(traceCdpSession);
+		const [finalSnapshots, traceStream] = await Promise.all([finalSnapshotsPromise, traceStreamPromise]);
+		for (const finalSnapshot of finalSnapshots) if (finalSnapshot !== null) storeNavigationSnapshot(finalSnapshot);
+		isTracing = false;
+		await writeDevtoolsTrace(traceCdpSession, traceStream, tracePath);
+		const capturedSnapshots = [...navigationSnapshotsByTimeOrigin.values()];
+		let fallbackFinalUrl = sanitizedRequestedUrl;
+		try {
+			if (latestPage !== void 0 && !latestPage.isClosed()) fallbackFinalUrl = sanitizeRuntimeUrl(latestPage.url());
+		} catch {}
+		const mergedSnapshot = capturedSnapshots.length > 0 ? mergeRuntimeScanProbeSnapshots(capturedSnapshots) : createFallbackSnapshot(Date.parse(capturedAt), fallbackFinalUrl);
+		return {
+			tracePath,
+			capturedAt,
+			durationMs,
+			snapshot: {
+				...mergedSnapshot,
+				droppedLongAnimationFrames: mergedSnapshot.droppedLongAnimationFrames + discardedSnapshotEvidence.droppedLongAnimationFrames,
+				droppedScriptTimings: mergedSnapshot.droppedScriptTimings + discardedSnapshotEvidence.droppedScriptTimings,
+				droppedComponentEvents: mergedSnapshot.droppedComponentEvents + discardedSnapshotEvidence.droppedComponentEvents,
+				droppedInteractions: mergedSnapshot.droppedInteractions + discardedSnapshotEvidence.droppedInteractions
+			},
+			connection
+		};
+	} finally {
+		await cleanup();
+		unregisterCleanup();
+	}
+};
+//#endregion
+//#region src/cli/runtime-scan/resolve-runtime-scan-format.ts
+const resolveRuntimeScanFormat = (format) => {
+	if (format === void 0 || format === "text") return "text";
+	if (format === "json" || format === "jsonl") return format;
+	throw new CliInputError(`--format must be one of: text, json, jsonl. Received "${format}".`);
+};
+//#endregion
+//#region src/cli/commands/runtime-scan.ts
+const writeRuntimeScanErrorReport = (format, message, sentryEventId) => {
+	const errorReport = {
+		schemaVersion: 1,
+		kind: "react-doctor-runtime-scan-error",
+		error: {
+			message,
+			sentryEventId
+		}
+	};
+	process.stdout.write(format === "json" ? `${JSON.stringify(errorReport, null, 2)}\n` : `${JSON.stringify({
+		...errorReport,
+		kind: "error"
+	})}\n`);
+};
+const resolveRuntimeScanUrl = async (url) => {
+	if (url !== void 0) return url;
+	if (!isTuiEnvironmentSupported(resolveTuiEnvironment(process.stderr.isTTY === true))) throw new CliInputError("A URL is required outside an interactive terminal. Run `react-doctor scan <url>`.");
+	recordCount(METRIC.runtimeScanUrlPromptShown);
+	const { promptRuntimeScanUrl } = await import("./prompt-runtime-scan-url-DkntQoEi.js");
+	return promptRuntimeScanUrl();
+};
+const runtimeScanAction = async (url, flags) => {
+	const format = resolveRuntimeScanFormat(flags.format);
+	if (format !== "text") enableJsonMode({
+		compact: format === "jsonl",
+		directory: process.cwd(),
+		writeCancellationError: () => {
+			writeRuntimeScanErrorReport(format, "Runtime scan cancelled by user.");
+		}
+	});
+	recordCount(METRIC.cliInvoked, 1, { command: "scan" });
+	resetSentryRunState();
+	try {
+		const resolvedUrl = await resolveRuntimeScanUrl(url);
+		if (resolvedUrl === null) {
+			resetSentryRunState();
+			return;
+		}
+		await withRunSpan(async () => {
+			const capture = await recordRuntimeTrace({
+				url: resolvedUrl,
+				traceOut: flags.traceOut,
+				cdpUrl: flags.cdp
+			});
+			const report = buildRuntimeScanReport({
+				requestedUrl: resolvedUrl,
+				tracePath: capture.tracePath,
+				capturedAt: capture.capturedAt,
+				durationMs: capture.durationMs,
+				snapshot: capture.snapshot,
+				connection: capture.connection
+			});
+			process.stdout.write(formatRuntimeScanReport(report, format));
+		}, { mapErrorForSpan: (error) => /* @__PURE__ */ new Error(error instanceof CliInputError ? "Runtime scan input failed." : "Runtime scan failed.") });
+		resetSentryRunState();
+	} catch (error) {
+		if (format === "text") throw error;
+		const sentryEventId = error instanceof CliInputError ? void 0 : await reportErrorToSentry(error);
+		writeRuntimeScanErrorReport(format, error instanceof CliInputError ? error.message : "Runtime scan failed. Use the error reference when reporting this issue.", sentryEventId);
+		process.exitCode = 1;
+	}
+};
+//#endregion
+export { runtimeScanAction };
+
+//# sourceMappingURL=runtime-scan-CNSkDPqQ.js.map
+//# debugId=fe5615f2-65fb-5307-86b3-155d3fb24351

@@ -1,0 +1,26 @@
+"use strict";
+
+exports.__esModule = true;
+exports.meta = exports.create = void 0;
+var _createBannedAttributeRule = _interopRequireDefault(require("../createBannedAttributeRule"));
+function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
+/**
+ * @fileoverview prefer toBePressed or not.toBePressed over attribute checks
+ */
+
+const meta = exports.meta = {
+  docs: {
+    description: "prefer toBePressed over checking attributes",
+    category: "Best Practices",
+    recommended: false,
+    // todo: make this recommended in next major
+    url: "prefer-pressed"
+  },
+  fixable: "code"
+};
+const create = exports.create = (0, _createBannedAttributeRule.default)({
+  preferred: "toBePressed",
+  negatedPreferred: "not.toBePressed",
+  mixedPreferred: "toBePartiallyPressed",
+  attributes: ["aria-pressed"]
+});

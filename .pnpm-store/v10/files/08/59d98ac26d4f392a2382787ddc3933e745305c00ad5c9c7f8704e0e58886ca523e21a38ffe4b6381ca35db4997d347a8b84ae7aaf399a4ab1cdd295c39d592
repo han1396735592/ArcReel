@@ -1,0 +1,1532 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="65990807-f013-5921-8eed-6f4a9b0e3c0b")}catch(e){}}();
+import { N as discardPrefetchedGitCommands, T as STAGED_SNAPSHOT_ADDITIONAL_CONFIG_FILENAMES, lt as CANONICAL_GITHUB_URL, u as METRIC, w as STAGED_FILES_TEMP_DIR_PREFIX, xn as STAGED_FILES_PROJECT_CONFIG_FILENAMES } from "./constants-_b1h6lxa.js";
+import { At as hasSupportedFrameworkOrLibrary, Bn as messageFromUnknown, Ct as getChangedLineRanges, D as isCodingAgentEnvironment, E as isCiOrCodingAgentEnvironment, Gn as isPlainObject, K as StagedFiles, Mt as highlighter, S as isDebugFlagEnabled, St as getBaselineDiffPlan, Tt as getDiffInfo, Un as isErrnoException, Ut as mapWithConcurrency, Vt as listWorkspacePackages, Xt as resolveScanTarget, Z as buildJsonReport, _ as VERSION, f as setJsonReportDirectory, ft as detectAiTrainingEnvironment, g as writeJsonReport, gn as gen, h as writeJsonErrorReport, j as Git, jn as provide, mn as decodeUnknownSync, n as recordDistribution, p as setJsonReportMode, pn as JsonReport, pt as discoverSupportedSubprojects, qt as remainingDeadlineBudgetMs, rn as toRelativePath, t as recordCount, u as enableJsonMode, vt as findLegacyConfig, wn as runPromise, xn as provide$1, y as CliInputError } from "./record-metric-AbxY4m3i.js";
+import { n as shutdownTelemetry, o as isExpectedUserError, r as flushSentry } from "./telemetry-runtime-B0ira8s1.js";
+import { n as handleUserError, t as handleError } from "./handle-error-UbC9DMvZ.js";
+import { t as reportErrorToSentry } from "./report-error-D3uGbvdG.js";
+import { t as toForwardSlashes } from "./path-format-By20mo8A.js";
+import { N as cliLogger, c as spinner, i as hasDoctorScript, j as runGitRaw, k as runGit, n as findNearestPackageDirectory, o as isSpinnerSilent, s as setSpinnerSilent } from "./install-doctor-script-BvrxLUFo.js";
+import { a as readReactDoctorWorkflow, c as workflowUsesV1Action, i as isReactDoctorWorkflowInstalled, l as prompts, s as upgradeWorkflowActionToV2 } from "./install-github-workflow-BABtyGBR.js";
+import { c as openWorkflowPullRequest, i as warnDeprecatedDiff, l as stageWorkflowFile, r as resolveScope, s as resolveBlockingLevel, t as finalizeScope } from "./resolve-scope-D27oa5iH.js";
+import { t as shouldSkipPrompts } from "./should-skip-prompts-DrbDyg_I.js";
+import { A as createInvocationInspect, C as detectLaunchableAgents, D as buildHandoffPayload, E as launchCliAgent, M as resolveMergeBaseRef, N as printHeadlessReport, O as collectProjectSourceFiles, R as printDiagnosticsDump, S as setUpGitHubActions, T as copyToClipboard, U as buildEmptyReportMessage, V as filterDiagnosticsByCategories, W as resolveInvocationOxlintConcurrency, _ as retryMissingProjectScores, a as validateModeFlags, b as filterScansForSurface, c as partitionProjectScanOutcomes, d as buildCodeFrame, f as resolveProjectScan, g as resolveProjectRelativeDirectory, h as resolveProjectSourceFilePaths, i as validateIncludeUntrackedScope, j as inspect, k as deduplicateProjectScans, l as discoverWorkspacePackages, m as resolveProjectDiffIncludePaths, n as formatSkippedProjectsMessage, o as resolveExcludedProjectDirectories, p as resolveProjectChangedLineRanges, s as projectManifestChanged, t as resolveScanExitCode, u as selectProjects, v as resolveWorkspaceDeadCodeOwner, w as CLI_AGENT_BINARIES, x as countUniqueScannedFiles, y as resolveCliInspectOptions } from "./resolve-scan-exit-code-CKO-d5OH.js";
+import { a as recordGate, g as loadAgentInstall, i as readPreference, o as runMigrations, p as SETUP_HINT_EVENT, r as isGatePending, s as writePreference, u as HANDOFF_TARGET_PREFERENCE_ID } from "./report-workflow-result-DQ2CaExl.js";
+import { a as askUpgradeActionVersion, c as recordCiPromptDecision, i as installReactDoctorAgentHooks, l as hasHandledActionUpgrade, o as askAddToGitHubActions, r as findAgentsWithOutdatedReactDoctorHooks, s as hasHandledCiPrompt, t as getSkillSourceDirectory, u as recordActionUpgradeDecision } from "./install-react-doctor-WkrWOqc4.js";
+import { t as readObjectFile } from "./read-object-file-D9jF1KIF.js";
+import * as fs$1 from "node:fs";
+import fs from "node:fs";
+import * as path$1 from "node:path";
+import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
+//#region src/cli/utils/read-baseline-report.ts
+const readBaselineReport = (file) => {
+	try {
+		const report = decodeUnknownSync(JsonReport)(JSON.parse(fs.readFileSync(file, "utf-8")));
+		if (!report.ok || report.mode === "baseline" || "baselineDegraded" in report && report.baselineDegraded || report.projects.length === 0 || report.projects.some((project) => project.skippedChecks.length > 0 || project.diagnostics.some((diagnostic) => diagnostic.fingerprint === void 0)) || report.schemaVersion === 3 && (report.skippedProjects?.length || report.projects.some((project) => !project.complete)) || report.diagnostics.some((diagnostic) => diagnostic.fingerprint === void 0)) throw new Error("Use a complete, non-comparison --json report from the current version, with diagnostic fingerprints.");
+		if (report.schemaVersion !== 3 || report.projects.some((project) => !project.sourceFilterConfigHash)) throw new Error("Regenerate the base --json report with the current version to record its source-dependent filter settings.");
+		return report;
+	} catch (error) {
+		throw new CliInputError(`Cannot read baseline report "${file}": ${error instanceof Error ? error.message : String(error)}`);
+	}
+};
+//#endregion
+//#region src/cli/utils/handoff-target-preference.ts
+const HANDOFF_TARGET_PREFERENCE = {
+	id: HANDOFF_TARGET_PREFERENCE_ID,
+	scope: "global"
+};
+const readHandoffTarget = (options = {}) => readPreference(HANDOFF_TARGET_PREFERENCE, {}, options);
+const rememberHandoffTarget = (target, options = {}) => writePreference(HANDOFF_TARGET_PREFERENCE, target, {}, options);
+//#endregion
+//#region src/cli/utils/install-skill-for-agent.ts
+const installReactDoctorSkillForAgent = async (agent, projectRoot) => {
+	const source = getSkillSourceDirectory();
+	const { installSkillsFromSource, SKILL_MANIFEST_FILE } = loadAgentInstall();
+	if (!fs$1.existsSync(path$1.join(source, SKILL_MANIFEST_FILE))) return false;
+	const result = await installSkillsFromSource({
+		source,
+		agents: [agent],
+		cwd: projectRoot,
+		mode: "copy"
+	});
+	return result.skills.length > 0 && result.failed.length === 0;
+};
+//#endregion
+//#region src/cli/utils/handoff-to-agent.ts
+const CLIPBOARD_CHOICE = "clipboard";
+const SKIP_CHOICE = "skip";
+const printPayload = (payload) => {
+	cliLogger.break();
+	cliLogger.log(highlighter.dim("──── Agent prompt ────"));
+	cliLogger.log(payload);
+	cliLogger.log(highlighter.dim("──────────────────────"));
+};
+const UPGRADE_COMMIT_MESSAGE = "ci: upgrade React Doctor GitHub Action to v2";
+const UPGRADE_PR_TITLE = "Upgrade React Doctor Action to v2";
+const UPGRADE_PR_BODY = `Bumps the React Doctor GitHub Actions workflow to the action's latest major, \`millionco/react-doctor@v2\`.
+
+Docs: https://www.react.doctor/ci`;
+const upgradeGitHubActionsWorkflow = async (workflow) => {
+	const { content, changed } = upgradeWorkflowActionToV2(workflow.content);
+	if (!changed) return false;
+	const upgradeSpinner = spinner("Opening a pull request to upgrade React Doctor to v2...").start();
+	try {
+		fs$1.writeFileSync(workflow.workflowPath, content);
+	} catch {
+		upgradeSpinner.fail("Couldn't update the workflow file.");
+		return false;
+	}
+	const pullRequestResult = await openWorkflowPullRequest({
+		workflowPath: workflow.workflowPath,
+		commitMessage: UPGRADE_COMMIT_MESSAGE,
+		prTitle: UPGRADE_PR_TITLE,
+		prBody: UPGRADE_PR_BODY
+	});
+	if (pullRequestResult.status === "pr-opened") upgradeSpinner.succeed(`Opened pull request for review: ${highlighter.info(pullRequestResult.url)}`);
+	else if (pullRequestResult.status === "pr-exists") {
+		try {
+			fs$1.writeFileSync(workflow.workflowPath, workflow.content);
+		} catch {}
+		upgradeSpinner.succeed(`A React Doctor pull request is already open: ${highlighter.info(pullRequestResult.url)}`);
+	} else if (pullRequestResult.status === "branch-pushed") upgradeSpinner.warn(`Pushed branch ${highlighter.bold(pullRequestResult.branch)} but couldn't open a PR. Open one with: gh pr create --head ${pullRequestResult.branch}`);
+	else {
+		upgradeSpinner.stop();
+		try {
+			fs$1.writeFileSync(workflow.workflowPath, content);
+		} catch {
+			cliLogger.log("  Couldn't finish the upgrade. Re-run React Doctor to try again.");
+			return false;
+		}
+		const didStage = await stageWorkflowFile({ workflowPath: workflow.workflowPath });
+		cliLogger.log(didStage ? "  Updated the workflow to @v2 and staged it. Commit it to finish the upgrade." : "  Updated the workflow to @v2. Commit the change to finish the upgrade.");
+	}
+	return true;
+};
+const maybeOfferActionUpgrade = async (projectRoot) => {
+	const workflow = readReactDoctorWorkflow(projectRoot);
+	if (!workflow || !workflowUsesV1Action(workflow.content)) return;
+	if (hasHandledActionUpgrade(projectRoot)) return;
+	const outcome = await askUpgradeActionVersion();
+	if (outcome === "cancel") return;
+	recordCount(METRIC.agentHandoff, 1, { outcome: outcome === "yes" ? "upgrade-accepted" : "upgrade-declined" });
+	if (outcome === "no") {
+		recordActionUpgradeDecision(projectRoot, "declined");
+		return;
+	}
+	if (await upgradeGitHubActionsWorkflow(workflow)) recordActionUpgradeDecision(projectRoot, "accepted");
+};
+const handoffToAgent = async (input) => {
+	if (!input.interactive || input.diagnostics.length === 0) return;
+	cliLogger.break();
+	const projectRootForCi = findNearestPackageDirectory(input.rootDirectory) ?? input.rootDirectory;
+	const isGitHubActionsConfigured = isReactDoctorWorkflowInstalled(projectRootForCi);
+	if (!isGitHubActionsConfigured && !hasHandledCiPrompt(projectRootForCi)) {
+		const ciOutcome = await askAddToGitHubActions();
+		recordCount(METRIC.agentHandoff, 1, {
+			outcome: `ci-${ciOutcome}`,
+			diagnosticsCount: input.diagnostics.length
+		});
+		if (ciOutcome === "cancel") return;
+		recordCiPromptDecision(projectRootForCi, ciOutcome === "yes" ? "accepted" : "declined");
+		if (ciOutcome === "yes") {
+			await setUpGitHubActions({ rootDirectory: input.rootDirectory });
+			cliLogger.break();
+		}
+	} else if (isGitHubActionsConfigured) await maybeOfferActionUpgrade(projectRootForCi);
+	else recordCount(METRIC.agentHandoff, 1, {
+		outcome: "ci-suppressed",
+		diagnosticsCount: input.diagnostics.length
+	});
+	const launchableAgents = await detectLaunchableAgents();
+	const { getSkillAgentConfig } = loadAgentInstall();
+	const choices = [
+		...launchableAgents.map((agentId) => ({
+			title: getSkillAgentConfig(agentId).displayName,
+			description: `Open ${CLI_AGENT_BINARIES[agentId]} here with the top issues as a prompt`,
+			value: agentId
+		})),
+		{
+			title: "Copy prompt to clipboard",
+			description: "Paste into any agent or chat",
+			value: CLIPBOARD_CHOICE
+		},
+		{
+			title: "Skip",
+			description: "Don't hand off",
+			value: SKIP_CHOICE
+		}
+	];
+	const rememberedTarget = readHandoffTarget();
+	const rememberedChoiceIndex = choices.findIndex((choice) => choice.value === rememberedTarget);
+	const initial = rememberedChoiceIndex >= 0 ? rememberedChoiceIndex : 0;
+	const { handoffTarget } = await prompts({
+		type: "select",
+		name: "handoffTarget",
+		message: "What would you like to do next?",
+		choices,
+		initial
+	}, { onCancel: () => true });
+	if (handoffTarget !== void 0) rememberHandoffTarget(handoffTarget);
+	let handoffOutcome = "launch";
+	if (handoffTarget === void 0) handoffOutcome = "cancel";
+	else if (handoffTarget === SKIP_CHOICE) handoffOutcome = "skip";
+	else if (handoffTarget === CLIPBOARD_CHOICE) handoffOutcome = "clipboard";
+	recordCount(METRIC.agentHandoff, 1, {
+		outcome: handoffOutcome,
+		agent: handoffOutcome === "launch" ? handoffTarget : void 0,
+		diagnosticsCount: input.diagnostics.length,
+		defaultRemembered: rememberedChoiceIndex >= 0,
+		keptDefault: handoffTarget === choices[initial].value
+	});
+	if (handoffTarget === void 0 || handoffTarget === SKIP_CHOICE) return;
+	const payload = buildHandoffPayload({
+		diagnostics: input.diagnostics,
+		projectName: input.projectName,
+		outputDirectory: input.outputDirectory
+	});
+	if (handoffTarget === CLIPBOARD_CHOICE) {
+		if (await copyToClipboard(payload)) cliLogger.log("Copied the prompt to your clipboard.");
+		else printPayload(payload);
+		return;
+	}
+	const agentId = handoffTarget;
+	const displayName = loadAgentInstall().getSkillAgentConfig(agentId).displayName;
+	const skillSpinner = spinner(`Installing the /react-doctor skill for ${displayName}...`).start();
+	try {
+		if (await installReactDoctorSkillForAgent(agentId, input.rootDirectory)) skillSpinner.succeed(`Installed the /react-doctor skill for ${displayName}.`);
+		else skillSpinner.stop();
+	} catch {
+		skillSpinner.stop();
+	}
+	cliLogger.log(highlighter.dim(`Handing off to ${displayName}...`));
+	try {
+		await launchCliAgent(agentId, payload, input.rootDirectory);
+	} catch {
+		cliLogger.warn(`Couldn't launch ${CLI_AGENT_BINARIES[agentId]}. Here's the prompt instead:`);
+		printPayload(payload);
+	}
+};
+//#endregion
+//#region src/cli/utils/migrate-action-pin.ts
+const WORKFLOWS_DIRECTORY = path$1.join(".github", "workflows");
+const RECOMMENDED_ACTION_REF = "v2";
+const MUTABLE_ACTION_REF = /(uses:\s*millionco\/react-doctor@)(?:main|master)\b/gi;
+const isWorkflowFile = (fileName) => /\.ya?ml$/.test(fileName);
+/**
+* Rewrites mutable `@main` / `@master` React Doctor GitHub Action references in
+* the repo's `.github/workflows/*.yml` to the recommended floating major
+* (`@v2`) — a supply-chain hardening (#299) that also moves the workflow onto
+* the current (install- and scan-cached) action release. Pinned tags / SHAs are
+* deliberate and left untouched. Returns the absolute paths of the workflow
+* files it rewrote — empty when there's nothing to migrate.
+*/
+const migrateActionPin = (projectRoot) => {
+	const workflowsDirectory = path$1.join(projectRoot, WORKFLOWS_DIRECTORY);
+	let entries;
+	try {
+		entries = fs$1.readdirSync(workflowsDirectory, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const rewrittenFiles = [];
+	for (const entry of entries) {
+		if (!entry.isFile() || !isWorkflowFile(entry.name)) continue;
+		const workflowPath = path$1.join(workflowsDirectory, entry.name);
+		let contents;
+		try {
+			contents = fs$1.readFileSync(workflowPath, "utf-8");
+		} catch {
+			continue;
+		}
+		const updated = contents.replace(MUTABLE_ACTION_REF, `$1${RECOMMENDED_ACTION_REF}`);
+		if (updated === contents) continue;
+		try {
+			fs$1.writeFileSync(workflowPath, updated);
+			rewrittenFiles.push(workflowPath);
+		} catch {}
+	}
+	return rewrittenFiles;
+};
+//#endregion
+//#region src/cli/utils/serialize-ts-object-literal.ts
+const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const INDENT_UNIT = "  ";
+const serializeKey = (key) => SAFE_IDENTIFIER_PATTERN.test(key) ? key : JSON.stringify(key);
+/**
+* Serializes a JSON-compatible value as an idiomatic TypeScript literal:
+* identifier-shaped object keys stay unquoted, two-space indented, no blank
+* lines. Intended for JSON-sourced config values (string / number / boolean /
+* null / array / plain object); any other type falls back to its JSON form.
+*/
+const serializeTsObjectLiteral = (value, depth = 0) => {
+	const indent = INDENT_UNIT.repeat(depth);
+	const childIndent = INDENT_UNIT.repeat(depth + 1);
+	if (Array.isArray(value)) {
+		if (value.length === 0) return "[]";
+		return `[\n${value.map((item) => `${childIndent}${serializeTsObjectLiteral(item, depth + 1)}`).join(",\n")}\n${indent}]`;
+	}
+	if (isPlainObject(value)) {
+		const keys = Object.keys(value);
+		if (keys.length === 0) return "{}";
+		return `{\n${keys.map((key) => `${childIndent}${serializeKey(key)}: ${serializeTsObjectLiteral(value[key], depth + 1)}`).join(",\n")}\n${indent}}`;
+	}
+	return JSON.stringify(value);
+};
+//#endregion
+//#region src/cli/utils/migrate-legacy-config.ts
+const MIGRATED_CONFIG_FILENAME = "doctor.config.ts";
+/**
+* Renames a pre-migration `react-doctor.config.json` to a typed
+* `doctor.config.ts`, preserving the user's settings as the default export.
+* `$schema` is dropped — the `ReactDoctorConfig` type supersedes it for
+* editor autocomplete. Returns the new file's absolute path, or `null` when
+* the legacy file can't be parsed as an object (left untouched so the user
+* can resolve it by hand).
+*/
+const migrateLegacyConfig = (legacy) => {
+	const parsed = readObjectFile(legacy.legacyFilePath);
+	if (!parsed) return null;
+	const config = { ...parsed };
+	delete config.$schema;
+	const targetPath = path$1.join(legacy.directory, MIGRATED_CONFIG_FILENAME);
+	const contents = `import type { ReactDoctorConfig } from "react-doctor/api";
+
+export default ${serializeTsObjectLiteral(config)} satisfies ReactDoctorConfig;
+`;
+	fs$1.writeFileSync(targetPath, contents);
+	fs$1.rmSync(legacy.legacyFilePath, { force: true });
+	return targetPath;
+};
+//#endregion
+//#region src/cli/utils/cli-migrations.ts
+const PROJECT_MIGRATIONS = [
+	{
+		id: "config-json-to-ts",
+		scope: "project",
+		run: ({ projectRoot }) => {
+			if (projectRoot === void 0) return false;
+			const legacyConfig = findLegacyConfig(projectRoot);
+			if (!legacyConfig) return false;
+			const migratedPath = migrateLegacyConfig(legacyConfig);
+			if (!migratedPath) return false;
+			cliLogger.success("Migrated react-doctor.config.json → doctor.config.ts");
+			cliLogger.dim(`  Your settings were preserved. Review ${toRelativePath(migratedPath, projectRoot)} and commit it.`);
+			cliLogger.break();
+			return true;
+		}
+	},
+	{
+		id: "action-pin-main-to-v2",
+		scope: "project",
+		run: ({ projectRoot }) => {
+			if (projectRoot === void 0) return false;
+			const rewrittenFiles = migrateActionPin(projectRoot);
+			if (rewrittenFiles.length === 0) return false;
+			const relativeFiles = rewrittenFiles.map((file) => toRelativePath(file, projectRoot)).join(", ");
+			cliLogger.success(`Pinned the React Doctor action to @v2 in ${relativeFiles}`);
+			cliLogger.dim("  An unpinned @main reference runs whatever the action's HEAD points to (a supply-chain risk). Review and commit the change — or revert it if you intentionally track main.");
+			cliLogger.break();
+			return true;
+		}
+	},
+	{
+		id: "agent-hooks-sh-to-mjs",
+		version: 2,
+		scope: "project",
+		run: ({ projectRoot }) => {
+			if (projectRoot === void 0) return false;
+			const agents = findAgentsWithOutdatedReactDoctorHooks(projectRoot);
+			if (agents.length === 0) return false;
+			installReactDoctorAgentHooks({
+				projectRoot,
+				agents
+			});
+			cliLogger.success(`Moved React Doctor agent hooks to end-of-turn checks (${agents.join(", ")})`);
+			cliLogger.dim("  Hooks now scan changed and untracked files once when the agent stops. Review and commit the change.");
+			cliLogger.break();
+			return true;
+		}
+	}
+];
+const runProjectMigrations = async (projectRoot, options = {}) => {
+	const results = await runMigrations(PROJECT_MIGRATIONS, { projectRoot }, options);
+	if (results.some((result) => result.ran && result.applied)) discardPrefetchedGitCommands();
+	return results;
+};
+//#endregion
+//#region src/cli/utils/read-changed-files-from.ts
+const isSafeRelativePath = (filePath) => {
+	if (filePath.length === 0) return false;
+	if (filePath.includes("\0")) return false;
+	if (path$1.isAbsolute(filePath)) return false;
+	const normalized = path$1.posix.normalize(filePath);
+	if (normalized === "." || normalized.startsWith("../") || normalized === "..") return false;
+	return normalized === filePath;
+};
+const readChangedFilesFrom = (filePath) => {
+	let raw;
+	try {
+		raw = fs$1.readFileSync(filePath, "utf8");
+	} catch (error) {
+		const errorCode = isErrnoException(error) ? error.code : void 0;
+		throw new CliInputError(`Could not read the --changed-files-from file "${filePath}"${errorCode ? ` (${errorCode})` : ""}. Pass a path to a readable text file that lists changed files, one per line.`);
+	}
+	const uniqueFiles = /* @__PURE__ */ new Set();
+	for (const line of raw.split(/\r?\n/)) {
+		const candidate = toForwardSlashes(line.trim());
+		if (!isSafeRelativePath(candidate)) continue;
+		uniqueFiles.add(candidate);
+	}
+	return [...uniqueFiles];
+};
+//#endregion
+//#region src/cli/utils/print-completed-scans-headless.ts
+const printCompletedScansHeadless = (input) => {
+	const surfaceDiagnostics = filterScansForSurface(input.completedScans, input.outputSurface);
+	const diagnostics = filterDiagnosticsByCategories(surfaceDiagnostics, input.categoryFilters);
+	const allDiagnosticCount = input.completedScans.reduce((total, scan) => total + scan.result.diagnostics.length, 0);
+	const scoreResult = input.completedScans.reduce((lowestScore, scan) => {
+		const scanScore = scan.result.score;
+		if (scanScore === null) return lowestScore;
+		if (lowestScore === null || scanScore.score < lowestScore.score) return scanScore;
+		return lowestScore;
+	}, null);
+	const skippedChecks = [...new Set(input.completedScans.flatMap((scan) => scan.result.skippedChecks))];
+	return gen(function* () {
+		yield* printHeadlessReport({
+			diagnostics,
+			elapsedMilliseconds: input.elapsedMilliseconds,
+			emptyStateMessage: buildEmptyReportMessage({
+				categoryFilters: input.categoryFilters,
+				demotedDiagnosticCount: allDiagnosticCount - surfaceDiagnostics.length,
+				outputSurface: input.outputSurface
+			}),
+			noScoreMessage: input.noScoreMessage,
+			projectName: input.projectName,
+			scannedFileCount: countUniqueScannedFiles(input.completedScans.map((scan) => scan.result)),
+			scoreResult: skippedChecks.length > 0 ? null : scoreResult,
+			skippedChecks
+		});
+		if (input.outputDirectory !== void 0 || input.verbose) yield* printDiagnosticsDump(diagnostics, input.outputDirectory, input.verbose);
+	});
+};
+//#endregion
+//#region src/cli/utils/prompt-install-setup.ts
+const SETUP_HINT_GATE = {
+	id: SETUP_HINT_EVENT,
+	scope: "project",
+	fireWhenUnknown: true
+};
+const hasDisabledSetupPrompt = (projectRoot, options = {}) => !isGatePending(SETUP_HINT_GATE, { projectRoot }, options);
+const disableSetupPrompt = (projectRoot, options = {}) => recordGate(SETUP_HINT_GATE, {
+	projectRoot,
+	outcome: "declined"
+}, options);
+const resolveInstallSetupProjectRoot = (options) => {
+	if (options.scanDirectories.length === 0) return findNearestPackageDirectory(options.scanRoot) ?? options.scanRoot;
+	const packageDirectories = /* @__PURE__ */ new Set();
+	for (const scanDirectory of options.scanDirectories) {
+		const packageDirectory = findNearestPackageDirectory(scanDirectory, options.scanRoot) ?? findNearestPackageDirectory(scanDirectory) ?? scanDirectory;
+		packageDirectories.add(packageDirectory);
+	}
+	if (packageDirectories.size !== 1) return findNearestPackageDirectory(options.scanRoot, options.scanRoot);
+	return [...packageDirectories][0] ?? null;
+};
+const defaultWriteLine = (line = "") => {
+	console.log(line);
+};
+const shouldShowAgentInstallHint = (options) => {
+	if (!(options.hasCompletedScan ?? options.hasScoredScan ?? false)) return false;
+	if (options.isJsonMode) return false;
+	if (options.isScoreOnly) return false;
+	if (options.isStaged) return false;
+	if (!(options.isCodingAgent ?? isCodingAgentEnvironment())) return false;
+	if (hasDisabledSetupPrompt(options.projectRoot, options.store)) return false;
+	return !hasDoctorScript(options.projectRoot);
+};
+const AGENT_INSTALL_HINT_LINES = [
+	"React Doctor is not installed in this project.",
+	"Ask the user if they would like to set it up, then run:",
+	"",
+	"  npx react-doctor install --yes",
+	"",
+	"This adds agent skill files, a `doctor` package script, and react-doctor as a dev dependency."
+];
+const printAgentInstallHint = (writeLine = defaultWriteLine) => {
+	writeLine("");
+	for (const line of AGENT_INSTALL_HINT_LINES) writeLine(line);
+};
+//#endregion
+//#region src/cli/utils/build-diagnostic-issue-url.ts
+const formatRuleIdentifier = (diagnostic) => `${diagnostic.plugin}/${diagnostic.rule}`;
+const buildDiagnosticIssueBody = (input) => {
+	const { diagnostic, relativeFilePath } = input;
+	const lines = [
+		"## Diagnostic",
+		"",
+		`- Rule: ${formatRuleIdentifier(diagnostic)}`,
+		`- Severity: ${diagnostic.severity}`,
+		`- Category: ${diagnostic.category}`,
+		`- Location: ${relativeFilePath}:${diagnostic.line}`,
+		"",
+		"## Message",
+		"",
+		"```text",
+		diagnostic.message,
+		"```"
+	];
+	if (diagnostic.help) lines.push("", "## Suggested Fix", "", "```text", diagnostic.help, "```");
+	lines.push("", "## Why this looks wrong or needs follow-up", "", "Please explain why this should be changed, suppressed, or treated as a false positive.");
+	return lines.join("\n");
+};
+const buildDiagnosticIssueUrl = (input) => {
+	const { diagnostic, relativeFilePath } = input;
+	const issueUrl = new URL(`${CANONICAL_GITHUB_URL}/issues/new`);
+	issueUrl.searchParams.set("title", `Diagnostic follow-up: ${formatRuleIdentifier(diagnostic)}`);
+	issueUrl.searchParams.set("labels", "bug");
+	issueUrl.searchParams.set("body", buildDiagnosticIssueBody({
+		diagnostic,
+		relativeFilePath
+	}));
+	return issueUrl.toString();
+};
+//#endregion
+//#region src/cli/utils/find-owning-project.ts
+const findOwningProjectDirectory = (rootDirectory, filePath) => {
+	const absoluteFile = path$1.isAbsolute(filePath) ? filePath : path$1.resolve(rootDirectory, filePath);
+	const workspacePackages = listWorkspacePackages(rootDirectory);
+	const candidates = workspacePackages.length > 0 ? workspacePackages : discoverSupportedSubprojects(rootDirectory);
+	if (candidates.length === 0) return rootDirectory;
+	let bestMatch = null;
+	for (const candidate of candidates) {
+		const candidateDirectory = path$1.resolve(candidate.directory);
+		const relativeFromCandidate = path$1.relative(candidateDirectory, absoluteFile);
+		if (relativeFromCandidate.startsWith("..") || path$1.isAbsolute(relativeFromCandidate)) continue;
+		const depth = candidateDirectory.length;
+		if (!bestMatch || depth > bestMatch.depth) bestMatch = {
+			directory: candidate.directory,
+			depth
+		};
+	}
+	return bestMatch ? bestMatch.directory : rootDirectory;
+};
+//#endregion
+//#region src/cli/utils/indent-multiline-text.ts
+const indentMultilineText = (text, linePrefix) => text.split("\n").map((lineText) => `${linePrefix}${lineText}`).join("\n");
+//#endregion
+//#region src/cli/utils/parse-file-line-argument.ts
+const parseFileLineArgument = (rawArgument) => {
+	const lastColonIndex = rawArgument.lastIndexOf(":");
+	if (lastColonIndex < 0) throw new CliInputError(`Expected "<file>:<line>" (e.g. "src/foo.tsx:42"), got "${rawArgument}".`);
+	const filePath = rawArgument.slice(0, lastColonIndex);
+	const lineText = rawArgument.slice(lastColonIndex + 1);
+	if (filePath.length === 0) throw new CliInputError(`Missing file path in "${rawArgument}".`);
+	const line = Number.parseInt(lineText, 10);
+	if (!Number.isFinite(line) || line <= 0 || String(line) !== lineText.trim()) throw new CliInputError(`Expected a positive line number in "${rawArgument}".`);
+	return {
+		filePath,
+		line
+	};
+};
+//#endregion
+//#region src/cli/utils/run-explain.ts
+const colorizeRuleByDiagnostic = (text, severity) => severity === "error" ? highlighter.error(text) : highlighter.warn(text);
+const resolveExplainTargetDirectory = async (filePath, context) => {
+	if (context.projectFlag) {
+		const matchedDirectories = await selectProjects(context.resolvedDirectory, context.projectFlag, true);
+		if (matchedDirectories.length === 0) return context.resolvedDirectory;
+		if (matchedDirectories.length > 1) throw new Error(`why takes a single project; --project resolved to ${matchedDirectories.length} projects.`);
+		return matchedDirectories[0];
+	}
+	return findOwningProjectDirectory(context.resolvedDirectory, filePath);
+};
+const runExplain = async (fileLineArgument, context) => {
+	const { filePath, line } = parseFileLineArgument(fileLineArgument);
+	const targetDirectory = await resolveExplainTargetDirectory(filePath, context);
+	const scanResult = await inspect(targetDirectory, {
+		...context.scanOptions,
+		silent: true,
+		noScore: true,
+		configOverride: context.userConfig
+	});
+	const requestedRelativePath = toRelativePath(filePath, targetDirectory);
+	const matchingDiagnostics = scanResult.diagnostics.filter((diagnostic) => diagnostic.line === line && toRelativePath(diagnostic.filePath, targetDirectory) === requestedRelativePath);
+	if (matchingDiagnostics.length === 0) {
+		cliLogger.log(`No react-doctor diagnostics at ${filePath}:${line}.`);
+		return;
+	}
+	for (const diagnostic of matchingDiagnostics) {
+		const ruleIdentifier = `${diagnostic.plugin}/${diagnostic.rule}`;
+		const severitySymbol = diagnostic.severity === "error" ? "✖" : "⚠";
+		const colorizedRule = colorizeRuleByDiagnostic(ruleIdentifier, diagnostic.severity);
+		const severityLabel = colorizeRuleByDiagnostic(diagnostic.severity, diagnostic.severity);
+		cliLogger.log(`${severitySymbol} ${colorizedRule} ${highlighter.dim(`(${severityLabel})`)} — ${diagnostic.message}`);
+		const codeFrame = buildCodeFrame({
+			filePath: diagnostic.filePath,
+			line: diagnostic.line,
+			column: diagnostic.column,
+			endLine: diagnostic.endLine,
+			rootDirectory: targetDirectory
+		});
+		if (codeFrame) cliLogger.log(indentMultilineText(codeFrame, "  "));
+		if (diagnostic.category) cliLogger.dim(`  Category: ${diagnostic.category}`);
+		if (diagnostic.help) cliLogger.dim(`  ${diagnostic.help}`);
+		cliLogger.dim(`  If this needs follow-up or looks like a false positive, open: ${buildDiagnosticIssueUrl({
+			diagnostic,
+			relativeFilePath: requestedRelativePath
+		})}`);
+		if (diagnostic.suppressionHint) {
+			cliLogger.break();
+			cliLogger.log(`  Suppression diagnosis: ${diagnostic.suppressionHint}`);
+		} else cliLogger.dim("  No nearby react-doctor-disable-next-line comment was detected — add one immediately above this line to suppress.");
+		cliLogger.break();
+	}
+};
+//#endregion
+//#region src/cli/utils/run-project-scan-batch.ts
+/**
+* Run one scan per project through the same bounded pool as
+* `diagnose({ projects })`, with the batch spinner and its progress counter.
+*
+* Pool members must not toggle the module-level spinner-silent flag themselves —
+* overlapping save/restore pairs would race — so the batch owns that toggle once
+* around the whole run.
+*
+*/
+const runProjectScanBatch = async (input) => {
+	const startTime = performance.now();
+	const projectCount = input.projects.length;
+	const isMultiProject = projectCount > 1;
+	const batchSpinner = isMultiProject && !input.isQuiet ? spinner(`Scanning ${projectCount} projects…`).start() : null;
+	const ownsBatchSpinnerSilence = isMultiProject && input.isSilent;
+	const wasSpinnerSilent = isSpinnerSilent();
+	if (ownsBatchSpinnerSilence) setSpinnerSilent(true);
+	const projectConcurrency = Math.max(4, (input.oxlintConcurrency ?? 1) * 4);
+	let finishedProjectCount = 0;
+	let scanOutcomes;
+	try {
+		scanOutcomes = await mapWithConcurrency(input.projects, isMultiProject ? projectConcurrency : 1, async (project) => {
+			const scanOutcome = await input.scanProject(project);
+			finishedProjectCount += 1;
+			batchSpinner?.update(`Scanning ${projectCount} projects… (${finishedProjectCount}/${projectCount})`);
+			return scanOutcome;
+		});
+	} finally {
+		if (ownsBatchSpinnerSilence) setSpinnerSilent(wasSpinnerSilent);
+		batchSpinner?.stop();
+	}
+	return {
+		...partitionProjectScanOutcomes(scanOutcomes),
+		elapsedMilliseconds: performance.now() - startTime
+	};
+};
+//#endregion
+//#region src/cli/utils/build-project-scan-plan.ts
+const buildProjectScanPlan = (input) => {
+	const projectBaselineBaseFiles = input.baselineDiffPlan === null ? null : resolveProjectSourceFilePaths(input.rootDirectory, input.projectDirectory, input.baselineDiffPlan.baseFiles);
+	const projectBaselineHeadFiles = input.baselineDiffPlan === null ? null : resolveProjectSourceFilePaths(input.rootDirectory, input.projectDirectory, input.baselineDiffPlan.headFiles);
+	if (!input.isDiffMode) return {
+		includePaths: void 0,
+		projectBaselineBaseFiles,
+		projectBaselineHeadFiles,
+		shouldSkipProject: false,
+		supplyChainManifestChanged: false
+	};
+	const changedSourceFiles = input.diffInfo === null ? [] : resolveProjectDiffIncludePaths(input.rootDirectory, input.projectDirectory, input.diffInfo);
+	const supplyChainManifestChanged = input.supplyChainEnabled && input.diffInfo !== null && projectManifestChanged(input.rootDirectory, input.projectDirectory, input.diffInfo);
+	const hasProjectBaselineBaseFiles = (projectBaselineBaseFiles?.length ?? 0) > 0;
+	const shouldSkipProject = changedSourceFiles.length === 0 && !supplyChainManifestChanged && !hasProjectBaselineBaseFiles;
+	const includePaths = [...changedSourceFiles];
+	if (includePaths.length === 0 && hasProjectBaselineBaseFiles) includePaths.push(...projectBaselineBaseFiles ?? []);
+	if (supplyChainManifestChanged) includePaths.push("package.json");
+	return {
+		includePaths,
+		projectBaselineBaseFiles,
+		projectBaselineHeadFiles,
+		shouldSkipProject,
+		supplyChainManifestChanged
+	};
+};
+//#endregion
+//#region src/cli/utils/warn-deprecated-fail-on.ts
+const warnDeprecatedFailOn = (flags, userConfig) => {
+	const usedFlag = flags.failOn !== void 0;
+	const usedConfig = userConfig?.failOn !== void 0;
+	if (!usedFlag && !usedConfig) return;
+	const source = usedFlag ? "The `--fail-on` flag" : "The `failOn` config option";
+	const replacement = usedFlag ? "`--blocking <level>`" : "`blocking`";
+	cliLogger.warn(`${source} is deprecated; rename it to ${replacement}.`);
+};
+//#endregion
+//#region src/cli/utils/warn-ai-training-environment.ts
+let didWarnAiTraining = false;
+const warnIfAiTrainingEnvironment = () => {
+	if (didWarnAiTraining) return;
+	const detected = detectAiTrainingEnvironment();
+	if (detected === null) return;
+	didWarnAiTraining = true;
+	process.stderr.write(`${highlighter.warn("react-doctor detected use in an AI or ML pipeline. This use requires written permission under the react-doctor license — contact founders@million.dev to request access.")}\n`);
+	recordCount(METRIC.aiTrainingWarningShown, 1, { environment: detected });
+};
+//#endregion
+//#region src/cli/utils/parse-staged-snapshot-divergences.ts
+const SNAPSHOT_CONFIG_FILENAMES = new Set([...STAGED_FILES_PROJECT_CONFIG_FILENAMES, ...STAGED_SNAPSHOT_ADDITIONAL_CONFIG_FILENAMES]);
+const parseStagedSnapshotDivergences = (statusOutput) => {
+	const divergentConfigFiles = /* @__PURE__ */ new Set();
+	const statusEntries = statusOutput.split("\0").filter((entry) => entry.length > 0);
+	for (let entryIndex = 0; entryIndex < statusEntries.length; entryIndex += 1) {
+		const entry = statusEntries[entryIndex];
+		const [indexStatus, worktreeStatus] = entry;
+		const filePath = entry.slice(3);
+		const hasRenameOrCopySource = indexStatus === "R" || indexStatus === "C" || worktreeStatus === "R" || worktreeStatus === "C";
+		const sourcePath = hasRenameOrCopySource ? statusEntries[entryIndex + 1] : void 0;
+		const worktreePaths = worktreeStatus === "R" || worktreeStatus === "C" ? [filePath, sourcePath] : [filePath];
+		if (worktreeStatus !== " " && worktreeStatus !== "!") {
+			for (const worktreePath of worktreePaths) if (worktreePath && SNAPSHOT_CONFIG_FILENAMES.has(path$1.basename(worktreePath))) divergentConfigFiles.add(worktreePath);
+		}
+		if (hasRenameOrCopySource) entryIndex += 1;
+	}
+	return [...divergentConfigFiles].sort();
+};
+//#endregion
+//#region src/cli/utils/find-staged-snapshot-divergences.ts
+const findStagedSnapshotDivergences = (directory) => {
+	const statusOutput = runGitRaw(directory, [
+		"status",
+		"--porcelain=v1",
+		"-z",
+		"--untracked-files=all",
+		"--ignored=matching"
+	]);
+	if (statusOutput === null) return null;
+	return parseStagedSnapshotDivergences(statusOutput);
+};
+//#endregion
+//#region src/cli/utils/build-final-cli-scan-outcome.ts
+const filterCompletedScansByCategories = (completedScans, categoryFilters) => categoryFilters.size === 0 ? [...completedScans] : completedScans.map((scan) => ({
+	...scan,
+	result: {
+		...scan.result,
+		diagnostics: filterDiagnosticsByCategories(scan.result.diagnostics, categoryFilters)
+	}
+}));
+const buildFinalCliScanOutcome = (input) => {
+	const baselineDeltas = input.completedScans.flatMap((scan) => scan.result.baselineDelta === void 0 ? [] : [scan.result.baselineDelta]);
+	const baselineComputed = input.skippedProjects.length === 0 && (input.completedScans.length > 0 || input.emptyComparison !== void 0) && input.completedScans.every((scan) => scan.result.baselineDelta !== void 0);
+	const baselineDegraded = input.baselineIntended && !baselineComputed;
+	let baseline;
+	if (baselineComputed) baseline = baselineDeltas.length > 0 ? {
+		baseRef: baselineDeltas[0].baseRef,
+		source: baselineDeltas[0].source,
+		baselineFile: baselineDeltas[0].baselineFile,
+		matchedCount: baselineDeltas.reduce((total, delta) => total + (delta.matchedCount ?? delta.baseTotalCount - delta.fixedCount), 0),
+		fixedCount: baselineDeltas.reduce((total, delta) => total + delta.fixedCount, 0),
+		baseTotalCount: baselineDeltas.reduce((total, delta) => total + delta.baseTotalCount, 0)
+	} : input.emptyComparison;
+	return {
+		baseline,
+		baselineDegraded,
+		mode: baselineDegraded ? "diff" : input.mode,
+		scansForJsonReport: filterCompletedScansByCategories(input.completedScans, input.categoryFilters),
+		shouldWarnNoSupportedLibraryDetected: input.completedScans.length > 0 && !input.completedScans.some((scan) => hasSupportedFrameworkOrLibrary(scan.result.project))
+	};
+};
+//#endregion
+//#region src/cli/utils/finalize-cli-scans.ts
+const reportSkippedProjects = (input) => {
+	input.skippedProjects.sort((left, right) => left.directory.localeCompare(right.directory));
+	if (input.skippedProjects.length === 0) return;
+	recordCount(METRIC.scanProjectSkipped, input.skippedProjects.length, { reason: "max-duration" });
+	if (!input.isQuiet) {
+		cliLogger.warn(formatSkippedProjectsMessage(input.skippedProjects.length));
+		cliLogger.break();
+	}
+};
+const finalizeCliScans = (input) => {
+	const outcome = buildFinalCliScanOutcome({
+		completedScans: input.completedScans,
+		skippedProjects: input.skippedProjects,
+		mode: input.mode,
+		baselineIntended: input.baselineIntended,
+		emptyComparison: input.emptyComparison,
+		categoryFilters: input.categoryFilters
+	});
+	if (outcome.shouldWarnNoSupportedLibraryDetected) {
+		recordCount(METRIC.scanNoReactDetected, 1);
+		cliLogger.warn(`No supported framework or library detected at ${input.resolvedDirectory} — library-specific rules were gated off; framework-neutral rules still ran.`);
+	}
+	if (input.isJsonMode) writeJsonReport(buildJsonReport({
+		sourceRevision: runGit(input.resolvedDirectory, ["rev-parse", "HEAD"]) ?? void 0,
+		version: VERSION,
+		directory: input.resolvedDirectory,
+		mode: outcome.mode,
+		diff: input.diff,
+		scans: outcome.scansForJsonReport,
+		skippedProjects: input.skippedProjects,
+		totalElapsedMilliseconds: performance.now() - input.startTime,
+		baseline: outcome.baseline,
+		baselineDegraded: outcome.baselineDegraded
+	}));
+	const exitCode = resolveScanExitCode({
+		scans: input.completedScans,
+		blockingLevel: resolveBlockingLevel(input.flags, input.userConfig),
+		diagnosticsAreGateExempt: input.isScoreOnly || outcome.baselineDegraded,
+		warningExitCode: input.flags.warningExitCode
+	});
+	if (input.flags.warningExitCode !== void 0) recordCount(METRIC.scanWarningExitCodeConfigured);
+	if (exitCode !== 0) process.exitCode = exitCode;
+};
+//#endregion
+//#region src/cli/utils/get-staged-files.ts
+const stagedFilesLayer = StagedFiles.layerNode.pipe(provide(Git.layerNode));
+const getStagedSourceFiles = async (directory) => {
+	let stagedSourceFiles;
+	try {
+		stagedSourceFiles = await runPromise(gen(function* () {
+			return yield* (yield* StagedFiles).discoverSourceFiles(directory);
+		}).pipe(provide$1(stagedFilesLayer)));
+	} catch (error) {
+		cliLogger.warn(`Failed to discover staged files: ${messageFromUnknown(error)}`);
+		return [];
+	}
+	if (stagedSourceFiles === null) throw new CliInputError("Could not read the git index to list staged files. Check that git can read the index in this directory.");
+	return [...stagedSourceFiles];
+};
+const materializeStagedFiles = async (input) => {
+	const snapshot = await runPromise(gen(function* () {
+		return yield* (yield* StagedFiles).materialize(input);
+	}).pipe(provide$1(stagedFilesLayer)));
+	return {
+		tempDirectory: snapshot.tempDirectory,
+		stagedFiles: [...snapshot.stagedFiles],
+		unmaterializedFiles: [...snapshot.unmaterializedFiles],
+		cleanup: snapshot.cleanup
+	};
+};
+//#endregion
+//#region src/cli/utils/select-staged-projects.ts
+/**
+* Appended to the reason a `--staged` run could not scan per package. Shared so
+* both fallback sites word it identically.
+*/
+const STAGED_PROJECT_FALLBACK_HINT = "Scanning the staged files at the scan root instead — fix the `projects` entries in your config to scan per package.";
+/**
+* Resolve the project directories a `--staged` scan owns. The interactive picker
+* is always skipped: a commit hook has nobody to answer it.
+*/
+const selectStagedProjects = async (input) => {
+	if (input.projectFlag) return selectProjects(input.rootDirectory, input.projectFlag, true, void 0);
+	if (input.configProjects === void 0) return [input.rootDirectory];
+	try {
+		return await selectProjects(input.rootDirectory, void 0, true, input.configProjects);
+	} catch (error) {
+		if (!(error instanceof CliInputError)) throw error;
+		cliLogger.warn(`${error.message} ${STAGED_PROJECT_FALLBACK_HINT}`);
+		cliLogger.break();
+		return [input.rootDirectory];
+	}
+};
+//#endregion
+//#region src/cli/utils/run-staged-inspect.ts
+const reportEmptyStagedScan = (input, reason, severity = "dim") => {
+	if (input.isJsonMode) {
+		writeJsonReport(buildJsonReport({
+			version: VERSION,
+			directory: input.directory,
+			mode: "staged",
+			diff: null,
+			scans: [],
+			totalElapsedMilliseconds: performance.now() - input.startTime
+		}));
+		return;
+	}
+	if (input.isScoreOnly) return;
+	if (severity === "warn") {
+		cliLogger.warn(reason);
+		cliLogger.break();
+		return;
+	}
+	cliLogger.dim(reason);
+};
+const resolveStagedProjectScanContext = async ({ scanTarget, rootDirectory, projectDirectory, isProjectExplicitlySelected }) => {
+	const projectScan = await resolveProjectScan(scanTarget, projectDirectory);
+	const treeRelativeDirectory = resolveProjectRelativeDirectory(rootDirectory, projectScan.directory);
+	if (treeRelativeDirectory === null) {
+		if (isProjectExplicitlySelected) throw new CliInputError(`Project "${toRelativePath(projectDirectory, rootDirectory)}" is outside ${rootDirectory}, so it holds none of the staged files. Run --staged from a directory that contains the project.`);
+		return null;
+	}
+	return {
+		projectDirectory,
+		scanDirectory: projectScan.directory,
+		treeRelativeDirectory,
+		projectConfig: projectScan.config,
+		projectConfigSourceDirectory: projectScan.configSourceDirectory
+	};
+};
+const collectStagedProjectScanContexts = async ({ scanTarget, rootDirectory, projectDirectories, isProjectExplicitlySelected }) => {
+	const projectScanContexts = [];
+	const seenScanDirectories = /* @__PURE__ */ new Set();
+	for (const projectDirectory of projectDirectories) {
+		const projectScanContext = await resolveStagedProjectScanContext({
+			scanTarget,
+			rootDirectory,
+			projectDirectory,
+			isProjectExplicitlySelected
+		});
+		if (projectScanContext === null) continue;
+		if (seenScanDirectories.has(projectScanContext.scanDirectory)) continue;
+		seenScanDirectories.add(projectScanContext.scanDirectory);
+		projectScanContexts.push(projectScanContext);
+	}
+	return projectScanContexts;
+};
+const resolveStagedProjectScanContexts = async (input) => {
+	const { flags, scanTarget } = input;
+	const rootDirectory = scanTarget.resolvedDirectory;
+	const userConfig = scanTarget.userConfig;
+	const configProjectsApply = (userConfig?.projects ?? []).some((projectName) => projectName.trim().length > 0) && scanTarget.requestedDirectory === scanTarget.configSourceDirectory;
+	const projectScanContexts = await collectStagedProjectScanContexts({
+		scanTarget,
+		rootDirectory,
+		projectDirectories: await selectStagedProjects({
+			rootDirectory,
+			projectFlag: flags.project,
+			configProjects: configProjectsApply ? userConfig?.projects : void 0
+		}),
+		isProjectExplicitlySelected: Boolean(flags.project)
+	});
+	if (projectScanContexts.length > 0) return projectScanContexts;
+	cliLogger.warn(`No configured project is inside ${rootDirectory}. ${STAGED_PROJECT_FALLBACK_HINT}`);
+	cliLogger.break();
+	const rootProjectScanContext = await resolveStagedProjectScanContext({
+		scanTarget,
+		rootDirectory,
+		projectDirectory: rootDirectory,
+		isProjectExplicitlySelected: false
+	});
+	return rootProjectScanContext === null ? [] : [rootProjectScanContext];
+};
+const assignStagedFilesToProjects = (projectScanContexts, stagedFiles) => {
+	const contextsByLongestPathFirst = [...projectScanContexts].sort((left, right) => right.treeRelativeDirectory.length - left.treeRelativeDirectory.length);
+	const ownedStagedFiles = /* @__PURE__ */ new Map();
+	for (const stagedFile of stagedFiles) {
+		const owner = contextsByLongestPathFirst.find((context) => context.treeRelativeDirectory.length === 0 || stagedFile.startsWith(`${context.treeRelativeDirectory}/`));
+		if (owner === void 0) continue;
+		const ownedFiles = ownedStagedFiles.get(owner.scanDirectory);
+		if (ownedFiles === void 0) ownedStagedFiles.set(owner.scanDirectory, [stagedFile]);
+		else ownedFiles.push(stagedFile);
+	}
+	return projectScanContexts.flatMap((projectScanContext) => {
+		const projectStagedFiles = ownedStagedFiles.get(projectScanContext.scanDirectory);
+		return projectStagedFiles === void 0 ? [] : [{
+			...projectScanContext,
+			stagedFiles: projectStagedFiles
+		}];
+	});
+};
+const collectConfigSubdirectories = (rootDirectory, projectScans) => {
+	const configSubdirectories = /* @__PURE__ */ new Set();
+	for (const projectScan of projectScans) {
+		configSubdirectories.add(projectScan.treeRelativeDirectory);
+		const projectRelativeDirectory = resolveProjectRelativeDirectory(rootDirectory, projectScan.projectDirectory);
+		if (projectRelativeDirectory !== null) configSubdirectories.add(projectRelativeDirectory);
+	}
+	return [...configSubdirectories];
+};
+const buildStagedProjectRuns = (rootDirectory, projectScans, materializedStagedFiles) => projectScans.map((projectScan) => ({
+	projectScan,
+	includePaths: resolveProjectSourceFilePaths(rootDirectory, projectScan.scanDirectory, projectScan.stagedFiles.filter((stagedFile) => materializedStagedFiles.has(stagedFile)))
+})).filter((projectRun) => projectRun.includePaths.length > 0);
+const scanStagedProject = async ({ input, projectRun, snapshotDirectory, stagedLineRanges, isMultiProject }) => {
+	const { projectScan, includePaths } = projectRun;
+	if (input.scanDeadlineEpochMs !== void 0 && remainingDeadlineBudgetMs(input.scanDeadlineEpochMs) === 0) return {
+		status: "skipped",
+		value: {
+			directory: projectScan.scanDirectory,
+			reason: "max-duration"
+		}
+	};
+	const rootDirectory = input.scanTarget.resolvedDirectory;
+	const projectTempDirectory = path$1.join(snapshotDirectory, projectScan.treeRelativeDirectory);
+	const scanResult = await input.inspectProject(projectTempDirectory, {
+		...input.scanOptions,
+		deadlineEpochMs: input.scanDeadlineEpochMs,
+		includePaths: [...includePaths],
+		configOverride: projectScan.projectConfig,
+		configSourceDirectory: projectScan.projectConfigSourceDirectory ?? void 0,
+		contextual: resolveScope(input.flags, input.scanTarget.userConfig).scope === "contextual",
+		changedLineRanges: stagedLineRanges === null ? void 0 : resolveProjectChangedLineRanges(rootDirectory, projectScan.scanDirectory, stagedLineRanges),
+		suppressRendering: isMultiProject,
+		concurrentScan: isMultiProject
+	});
+	const diagnostics = scanResult.diagnostics.map((diagnostic) => ({
+		...diagnostic,
+		filePath: path$1.isAbsolute(diagnostic.filePath) ? diagnostic.filePath.replaceAll(projectTempDirectory, () => projectScan.scanDirectory) : diagnostic.filePath
+	}));
+	return {
+		status: "completed",
+		value: {
+			directory: projectScan.scanDirectory,
+			result: {
+				...scanResult,
+				diagnostics,
+				project: {
+					...scanResult.project,
+					rootDirectory: projectScan.scanDirectory
+				}
+			},
+			config: projectScan.projectConfig
+		}
+	};
+};
+const reportUnmaterializedStagedFiles = (unmaterializedFileCount, stagedFileCount, isQuiet) => {
+	if (unmaterializedFileCount === 0 || isQuiet) return;
+	const stagedFileLabel = `staged file${stagedFileCount === 1 ? "" : "s"}`;
+	cliLogger.warn(`Skipped ${unmaterializedFileCount} of ${stagedFileCount} ${stagedFileLabel}; they could not be snapshotted from the index.`);
+	cliLogger.break();
+};
+const printStagedBatchResults = async ({ input, completedScans, elapsedMilliseconds, isMultiProject }) => {
+	const { flags, scanOptions } = input;
+	const outputSurface = scanOptions.outputSurface ?? "cli";
+	if (!input.isQuiet && isMultiProject && completedScans.length > 0) await runPromise(printCompletedScansHeadless({
+		categoryFilters: input.categoryFilters,
+		completedScans,
+		elapsedMilliseconds,
+		noScoreMessage: "Score unavailable.",
+		outputDirectory: flags.outputDir,
+		outputSurface,
+		projectName: path$1.basename(input.scanTarget.resolvedDirectory),
+		verbose: Boolean(flags.verbose)
+	}));
+	if (!flags.outputDir || !isMultiProject || !input.isQuiet) return;
+	await runPromise(printDiagnosticsDump(filterDiagnosticsByCategories(filterScansForSurface(completedScans, outputSurface), input.categoryFilters), flags.outputDir, false, "stderr"));
+};
+const finalizeStagedBatch = ({ input, completedScans, skippedProjects }) => {
+	const { flags, scanTarget } = input;
+	finalizeCliScans({
+		completedScans,
+		skippedProjects,
+		mode: "staged",
+		diff: null,
+		baselineIntended: false,
+		isJsonMode: input.isJsonMode,
+		isScoreOnly: input.isScoreOnly,
+		flags,
+		categoryFilters: input.categoryFilters,
+		userConfig: scanTarget.userConfig,
+		resolvedDirectory: scanTarget.resolvedDirectory,
+		startTime: input.startTime
+	});
+};
+const runMaterializedStagedInspect = async ({ input, projectScans, snapshot, stagedFileCount, stagedLineRanges, emptyScanInput }) => {
+	const { scanTarget, scanOptions } = input;
+	const resolvedDirectory = scanTarget.resolvedDirectory;
+	const projectRuns = buildStagedProjectRuns(resolvedDirectory, projectScans, new Set(snapshot.stagedFiles));
+	if (projectRuns.length === 0) {
+		reportEmptyStagedScan(emptyScanInput, `Could not read any of the ${stagedFileCount} staged file${stagedFileCount === 1 ? "" : "s"} out of the index, so nothing was scanned. An unusually large staged file is the usual cause.`, "warn");
+		return;
+	}
+	reportUnmaterializedStagedFiles(snapshot.unmaterializedFiles.length, stagedFileCount, input.isQuiet);
+	const isMultiProject = projectRuns.length > 1;
+	const stagedBatch = await runProjectScanBatch({
+		projects: projectRuns,
+		isQuiet: input.isQuiet,
+		isSilent: scanOptions.silent === true,
+		scanProject: (projectRun) => scanStagedProject({
+			input,
+			projectRun,
+			snapshotDirectory: snapshot.tempDirectory,
+			stagedLineRanges,
+			isMultiProject
+		})
+	});
+	const completedScans = stagedBatch.completedScans;
+	const skippedProjects = stagedBatch.skippedScans;
+	reportSkippedProjects({
+		skippedProjects,
+		isQuiet: input.isQuiet
+	});
+	await printStagedBatchResults({
+		input,
+		completedScans,
+		elapsedMilliseconds: stagedBatch.elapsedMilliseconds,
+		isMultiProject
+	});
+	finalizeStagedBatch({
+		input,
+		completedScans,
+		skippedProjects
+	});
+};
+const runStagedInspect = async (input) => {
+	const { flags, scanTarget } = input;
+	const resolvedDirectory = scanTarget.resolvedDirectory;
+	const emptyScanInput = {
+		directory: resolvedDirectory,
+		isJsonMode: input.isJsonMode,
+		isScoreOnly: input.isScoreOnly,
+		startTime: input.startTime
+	};
+	const projectScanContexts = await resolveStagedProjectScanContexts(input);
+	const rootStagedFiles = await getStagedSourceFiles(resolvedDirectory);
+	if (rootStagedFiles.length === 0) {
+		reportEmptyStagedScan(emptyScanInput, "No staged source files found.");
+		return;
+	}
+	const stagedProjectScans = assignStagedFilesToProjects(projectScanContexts, rootStagedFiles);
+	if (stagedProjectScans.length === 0) {
+		reportEmptyStagedScan(emptyScanInput, "No staged source files in the selected projects.");
+		return;
+	}
+	const selectedStagedFiles = stagedProjectScans.flatMap((projectScan) => projectScan.stagedFiles);
+	const stagedFileCount = selectedStagedFiles.length;
+	const unselectedStagedFileCount = rootStagedFiles.length - stagedFileCount;
+	if (!input.isQuiet) {
+		cliLogger.log(`Scanning ${highlighter.info(`${stagedFileCount}`)} staged files...`);
+		if (unselectedStagedFileCount > 0) cliLogger.dim(`${unselectedStagedFileCount} more staged file${unselectedStagedFileCount === 1 ? "" : "s"} outside the selected projects.`);
+		cliLogger.break();
+	}
+	const stagedScope = resolveScope(flags, scanTarget.userConfig).scope;
+	const stagedWantsLines = stagedScope === "lines" || stagedScope === "contextual";
+	const stagedLineRanges = stagedWantsLines ? await getChangedLineRanges({
+		directory: resolvedDirectory,
+		cached: true,
+		includeDeletions: stagedScope === "contextual",
+		files: selectedStagedFiles
+	}) : null;
+	if (stagedWantsLines && stagedLineRanges === null && !input.isQuiet) {
+		cliLogger.warn("Could not determine staged changed lines; reporting all issues in staged files.");
+		cliLogger.break();
+	}
+	if (stagedProjectScans.some((projectScan) => projectScan.treeRelativeDirectory.length > 0)) recordCount(METRIC.stagedPerProject, 1, { projectCount: stagedProjectScans.length });
+	const tempDirectory = fs$1.mkdtempSync(path$1.join(tmpdir(), STAGED_FILES_TEMP_DIR_PREFIX));
+	const snapshot = await materializeStagedFiles({
+		directory: resolvedDirectory,
+		stagedFiles: selectedStagedFiles,
+		tempDirectory,
+		configSubdirectories: collectConfigSubdirectories(resolvedDirectory, stagedProjectScans)
+	}).catch((error) => {
+		fs$1.rmSync(tempDirectory, {
+			recursive: true,
+			force: true
+		});
+		throw error;
+	});
+	try {
+		await runMaterializedStagedInspect({
+			input,
+			projectScans: stagedProjectScans,
+			snapshot,
+			stagedFileCount,
+			stagedLineRanges,
+			emptyScanInput
+		});
+	} finally {
+		snapshot.cleanup();
+	}
+};
+//#endregion
+//#region src/cli/commands/inspect.ts
+const buildFileSelectionDiffInfo = (filePaths) => ({
+	currentBranch: process.env.GITHUB_HEAD_REF?.trim() || null,
+	baseBranch: process.env.GITHUB_BASE_REF?.trim() || "pull request target",
+	baseSha: process.env.REACT_DOCTOR_BASE_SHA?.trim() || void 0,
+	changedFiles: [...filePaths],
+	isCurrentChanges: false
+});
+const hasScanDeadlineExpired = (scanDeadlineEpochMs) => scanDeadlineEpochMs !== void 0 && remainingDeadlineBudgetMs(scanDeadlineEpochMs) === 0;
+const isProjectSupplyChainEnabled = ({ flags, projectConfig }) => flags.supplyChain ?? projectConfig?.supplyChain?.enabled !== false;
+const buildProjectInspectOptions = ({ context, projectScan, projectScanPlan, ownsWorkspaceDeadCode }) => {
+	const scanDirectory = projectScan.directory;
+	const savedBaseline = context.savedBaseline;
+	const baselineProject = savedBaseline?.projects.find((project) => path$1.resolve(context.resolvedDirectory, path$1.relative(savedBaseline.directory, project.directory)) === scanDirectory);
+	const baselinePaths = projectScanPlan.includePaths ? new Set([...projectScanPlan.includePaths, ...projectScanPlan.projectBaselineBaseFiles ?? []]) : null;
+	return {
+		...context.scanOptions,
+		deadCode: context.workspaceDeadCodeOwner === null ? context.scanOptions.deadCode : ownsWorkspaceDeadCode,
+		precomputedSourceFiles: context.precomputedSourceFiles?.get(scanDirectory),
+		deadlineEpochMs: context.scanDeadlineEpochMs,
+		includePaths: projectScanPlan.includePaths,
+		configOverride: projectScan.config,
+		configSourceDirectory: projectScan.configSourceDirectory ?? void 0,
+		suppressRendering: context.isMultiProject,
+		concurrentScan: context.isMultiProject,
+		excludedProjectDirectories: resolveExcludedProjectDirectories(scanDirectory, [...context.projectScans.map((candidateProjectScan) => candidateProjectScan.directory), ...context.workspaceProjectDirectories]),
+		retainExcludedProjectDeadCodeDiagnostics: ownsWorkspaceDeadCode,
+		baselineReport: savedBaseline && context.flags.baseline ? {
+			file: context.flags.baseline,
+			sourceFilterConfigHash: baselineProject?.sourceFilterConfigHash,
+			sourceRevision: savedBaseline.sourceRevision,
+			diagnostics: baselineProject ? baselineProject.diagnostics.flatMap((diagnostic) => {
+				const filePath = path$1.relative(baselineProject.directory, path$1.resolve(baselineProject.directory, diagnostic.filePath)).replace(/\\/g, "/");
+				if (baselinePaths && !baselinePaths.has(filePath)) return [];
+				return [{
+					...diagnostic,
+					relatedLocations: diagnostic.relatedLocations ? [...diagnostic.relatedLocations] : void 0,
+					filePath
+				}];
+			}) : [],
+			renamedFiles: Object.fromEntries(Object.entries(context.baselineDiffPlan?.renamedFiles ?? {}).map(([basePath, headPath]) => [path$1.relative(scanDirectory, path$1.resolve(context.resolvedDirectory, basePath)).replace(/\\/g, "/"), path$1.relative(scanDirectory, path$1.resolve(context.resolvedDirectory, headPath)).replace(/\\/g, "/")]))
+		} : void 0,
+		baseline: context.baselineRef !== null && projectScanPlan.projectBaselineBaseFiles !== null && projectScanPlan.projectBaselineHeadFiles !== null ? {
+			ref: context.baselineRef,
+			baseFiles: projectScanPlan.projectBaselineBaseFiles,
+			headFiles: projectScanPlan.projectBaselineHeadFiles
+		} : void 0,
+		contextual: context.scope === "contextual",
+		changedLineRanges: (context.scope === "lines" || context.scope === "contextual") && context.changedLineRanges !== null ? resolveProjectChangedLineRanges(context.resolvedDirectory, scanDirectory, context.changedLineRanges) : void 0,
+		supplyChainManifestChanged: projectScanPlan.supplyChainManifestChanged
+	};
+};
+const runConfiguredProjectScan = async ({ context, projectScan }) => {
+	if (hasScanDeadlineExpired(context.scanDeadlineEpochMs)) return {
+		status: "skipped",
+		value: {
+			directory: projectScan.directory,
+			reason: "max-duration"
+		}
+	};
+	const scanDirectory = projectScan.directory;
+	const projectConfig = projectScan.config;
+	const ownsWorkspaceDeadCode = scanDirectory === context.workspaceDeadCodeOwner;
+	const supplyChainEnabled = isProjectSupplyChainEnabled({
+		flags: context.flags,
+		projectConfig
+	});
+	const projectScanPlan = buildProjectScanPlan({
+		rootDirectory: context.resolvedDirectory,
+		projectDirectory: scanDirectory,
+		baselineDiffPlan: context.baselineDiffPlan,
+		diffInfo: context.diffInfo,
+		isDiffMode: context.isDiffMode,
+		supplyChainEnabled
+	});
+	if (projectScanPlan.shouldSkipProject) {
+		if (!context.isQuiet) {
+			cliLogger.dim(`No changed source files in ${scanDirectory}, skipping.`);
+			cliLogger.break();
+		}
+		return { status: "omitted" };
+	}
+	if (!context.isQuiet && !context.isMultiProject) cliLogger.dim("  ");
+	const scanResult = await context.inspectProject(scanDirectory, buildProjectInspectOptions({
+		context,
+		projectScan,
+		projectScanPlan,
+		ownsWorkspaceDeadCode
+	}));
+	if (!context.isQuiet && !context.isMultiProject) cliLogger.break();
+	return {
+		status: "completed",
+		value: {
+			directory: scanDirectory,
+			result: scanResult,
+			config: projectConfig
+		}
+	};
+};
+/**
+* On an interactive human run, rename a pre-migration
+* `react-doctor.config.json` to `doctor.config.ts` before config is loaded,
+* so the scan reads the renamed file and the user is told once. CI, coding
+* agents, JSON/score output, pre-commit (`--staged`) hooks, and non-TTY runs
+* are left untouched — the loader still reads the legacy file as a deprecated
+* fallback and warns — so a scan never mutates the repo unattended.
+*/
+const maybeMigrateLegacyConfig = async (requestedDirectory, { isQuiet, isStaged }) => {
+	if (!(!isQuiet && !isStaged && process.stdout.isTTY === true && !isCiOrCodingAgentEnvironment())) return;
+	await runProjectMigrations(requestedDirectory);
+};
+const inspectAction = async (directory, flags, invocationCommand = "inspect", selectedFilePaths) => {
+	const isScoreOnly = Boolean(flags.score);
+	const isJsonMode = Boolean(flags.json);
+	const isQuiet = isScoreOnly || isJsonMode;
+	const requestedDirectory = path$1.resolve(directory);
+	const startTime = performance.now();
+	let scanStartupSpinner = null;
+	try {
+		if (isJsonMode) {
+			enableJsonMode({
+				compact: Boolean(flags.jsonCompact),
+				directory: requestedDirectory,
+				outputFile: flags.jsonOut
+			});
+			if (flags.jsonOut) recordCount(METRIC.jsonOutUsed, 1);
+		}
+		recordCount(METRIC.cliInvoked, 1, { command: invocationCommand });
+		validateModeFlags(flags);
+		if (flags.staged) setJsonReportMode("staged");
+		await maybeMigrateLegacyConfig(requestedDirectory, {
+			isQuiet,
+			isStaged: Boolean(flags.staged)
+		});
+		const scanTarget = await resolveScanTarget(requestedDirectory, { allowAmbiguous: true });
+		const userConfig = scanTarget.userConfig;
+		const resolvedDirectory = scanTarget.resolvedDirectory;
+		setJsonReportDirectory(resolvedDirectory);
+		warnDeprecatedFailOn(flags, userConfig);
+		warnDeprecatedDiff(flags, userConfig);
+		warnIfAiTrainingEnvironment();
+		if (scanTarget.didRedirectViaRootDir && !isQuiet) {
+			cliLogger.dim(`Redirected to ${highlighter.info(toRelativePath(resolvedDirectory, requestedDirectory))} via react-doctor config "rootDir".`);
+			cliLogger.break();
+		}
+		if (flags.staged) {
+			const divergentConfigFiles = findStagedSnapshotDivergences(resolvedDirectory);
+			if (divergentConfigFiles === null) throw new CliInputError("Could not verify that staged configuration matches the worktree. Run the command from a Git worktree with Git available.");
+			if (divergentConfigFiles.length > 0) {
+				recordCount(METRIC.stagedSnapshotDivergence, 1, { divergentInputCount: divergentConfigFiles.length });
+				throw new CliInputError(`Cannot scan staged files while configuration differs between the index and worktree: ${divergentConfigFiles.join(", ")}. Stage or restore those files, then rerun react-doctor --staged.`);
+			}
+		}
+		const explainArgument = flags.explain;
+		if (explainArgument !== void 0) {
+			await runExplain(explainArgument, {
+				resolvedDirectory,
+				userConfig,
+				scanOptions: resolveCliInspectOptions(flags, userConfig),
+				projectFlag: flags.project
+			});
+			return;
+		}
+		const scanOptions = resolveCliInspectOptions(flags, userConfig);
+		const oxlintConcurrency = resolveInvocationOxlintConcurrency(scanOptions.concurrency);
+		const inspectProject = createInvocationInspect(oxlintConcurrency);
+		const scanDeadlineEpochMs = scanOptions.maxDurationMs !== void 0 ? Date.now() + scanOptions.maxDurationMs : void 0;
+		const categoryFilters = new Set(scanOptions.categoryFilters ?? []);
+		const skipPrompts = shouldSkipPrompts({
+			yes: flags.yes,
+			json: flags.json
+		});
+		if (flags.staged) {
+			await runStagedInspect({
+				flags,
+				scanTarget,
+				scanOptions,
+				inspectProject,
+				scanDeadlineEpochMs,
+				categoryFilters,
+				isQuiet,
+				isJsonMode,
+				isScoreOnly,
+				startTime
+			});
+			return;
+		}
+		const workspaceProjectDirectories = discoverWorkspacePackages(resolvedDirectory).map((workspacePackage) => workspacePackage.directory);
+		const projectDirectories = await selectProjects(resolvedDirectory, flags.project, skipPrompts, userConfig?.projects);
+		const projectSelectionCompletedTime = performance.now();
+		const hasPositionalFileSelection = selectedFilePaths !== void 0;
+		let providedFilesDiffInfo = hasPositionalFileSelection ? buildFileSelectionDiffInfo(selectedFilePaths) : flags.changedFilesFrom ? buildFileSelectionDiffInfo(readChangedFilesFrom(path$1.resolve(flags.changedFilesFrom))) : null;
+		if (providedFilesDiffInfo !== null && requestedDirectory !== resolvedDirectory) {
+			const relativeProjectDirectory = resolveProjectRelativeDirectory(requestedDirectory, resolvedDirectory);
+			if (relativeProjectDirectory) {
+				const projectPrefix = `${relativeProjectDirectory}/`;
+				providedFilesDiffInfo = {
+					...providedFilesDiffInfo,
+					changedFiles: providedFilesDiffInfo.changedFiles.flatMap((filePath) => {
+						return filePath.startsWith(projectPrefix) ? [filePath.slice(projectPrefix.length)] : [];
+					})
+				};
+			}
+		}
+		const savedBaseline = flags.baseline ? readBaselineReport(path$1.resolve(flags.baseline)) : null;
+		const resolvedScopeRequest = resolveScope(flags, userConfig);
+		const requestedScope = {
+			...resolvedScopeRequest,
+			base: resolvedScopeRequest.base ?? (savedBaseline?.schemaVersion === 3 ? savedBaseline.sourceRevision : void 0)
+		};
+		const includeUntracked = flags.includeUntracked ?? false;
+		const scopeRequest = hasPositionalFileSelection ? {
+			scope: "files",
+			base: void 0,
+			usedDeprecatedDiff: false
+		} : requestedScope.scope === void 0 && providedFilesDiffInfo !== null ? {
+			...requestedScope,
+			scope: "changed"
+		} : requestedScope;
+		validateIncludeUntrackedScope(includeUntracked, scopeRequest.scope);
+		scanStartupSpinner = !isQuiet ? spinner("Scanning...").start() : null;
+		if (scanStartupSpinner !== null) recordDistribution(METRIC.scanFeedbackDelay, performance.now() - projectSelectionCompletedTime, { unit: "millisecond" });
+		const wantsDiffMode = scopeRequest.scope !== void 0 && scopeRequest.scope !== "full";
+		const shouldDetectDiff = providedFilesDiffInfo === null && (wantsDiffMode || scopeRequest.scope === void 0 && !skipPrompts && !isQuiet);
+		const diffInfo = providedFilesDiffInfo ?? (shouldDetectDiff ? await getDiffInfo(resolvedDirectory, scopeRequest.base, includeUntracked).catch((error) => {
+			if (savedBaseline) return null;
+			throw error;
+		}) : null) ?? (scopeRequest.scope === "changed" && !savedBaseline ? await getDiffInfo(resolvedDirectory, scopeRequest.base === runGit(resolvedDirectory, ["branch", "--show-current"]) ? "HEAD" : scopeRequest.base ?? "HEAD", includeUntracked) : null);
+		scanStartupSpinner?.stop();
+		scanStartupSpinner = null;
+		const scope = await finalizeScope({
+			requested: scopeRequest,
+			diffInfo,
+			skipPrompts,
+			isQuiet
+		});
+		scanStartupSpinner = !isQuiet ? spinner("Scanning...").start() : null;
+		const isDiffMode = scope !== "full";
+		let comparisonBaseRef = null;
+		if (isDiffMode && diffInfo && !hasPositionalFileSelection) if (diffInfo.isCurrentChanges) comparisonBaseRef = "HEAD";
+		else if (diffInfo.baseSha) comparisonBaseRef = await resolveMergeBaseRef(resolvedDirectory, diffInfo.baseSha);
+		else comparisonBaseRef = diffInfo.diffBaseRef ?? await resolveMergeBaseRef(resolvedDirectory, diffInfo.baseBranch);
+		const baselineRef = scope === "changed" && !savedBaseline ? comparisonBaseRef : null;
+		const comparisonPlanRef = baselineRef ?? (savedBaseline?.schemaVersion === 3 ? savedBaseline.sourceRevision : void 0);
+		const baselineDiffPlan = comparisonPlanRef ? await getBaselineDiffPlan(resolvedDirectory, comparisonPlanRef) : null;
+		const linesBaseRef = diffInfo?.isCurrentChanges ? "HEAD" : comparisonBaseRef;
+		const changedLineRanges = (scope === "lines" || scope === "contextual") && diffInfo !== null && (diffInfo.isCurrentChanges || linesBaseRef !== null) && diffInfo !== null ? await getChangedLineRanges({
+			directory: resolvedDirectory,
+			baseRef: linesBaseRef ?? void 0,
+			includeDeletions: scope === "contextual",
+			files: [...diffInfo.changedFiles],
+			includeUntracked
+		}) : null;
+		scanStartupSpinner?.stop();
+		scanStartupSpinner = null;
+		if ((scope === "lines" || scope === "contextual") && changedLineRanges === null && !isQuiet) {
+			cliLogger.warn("Could not determine changed lines (no base ref or git diff failed); reporting all issues in changed files.");
+			cliLogger.break();
+		}
+		setJsonReportMode(baselineRef || savedBaseline ? "baseline" : isDiffMode ? "diff" : "full");
+		if (isDiffMode && diffInfo && !isQuiet) {
+			if (hasPositionalFileSelection) {
+				const fileLabel = diffInfo.changedFiles.length === 1 ? "file" : "files";
+				cliLogger.log(`Scanning ${diffInfo.changedFiles.length} selected ${fileLabel}`);
+			} else if (diffInfo.isCurrentChanges) cliLogger.log("Scanning uncommitted changes");
+			else {
+				const currentBranchLabel = diffInfo.currentBranch ?? "(detached HEAD)";
+				cliLogger.log(`Scanning changes: ${highlighter.info(currentBranchLabel)} → ${highlighter.info(diffInfo.baseBranch)}`);
+			}
+			cliLogger.break();
+		}
+		const projectScans = deduplicateProjectScans(await Promise.all(projectDirectories.map((projectDirectory) => resolveProjectScan(scanTarget, projectDirectory))));
+		const isMultiProject = projectScans.length > 1;
+		const rootProjectScan = projectScans.find((projectScan) => path$1.resolve(projectScan.directory) === path$1.resolve(resolvedDirectory));
+		const workspaceDeadCodeOwner = resolveWorkspaceDeadCodeOwner({
+			rootDirectory: resolvedDirectory,
+			projectDirectories: projectScans.map((projectScan) => projectScan.directory),
+			isRootDeadCodeEnabled: scanOptions.deadCode ?? rootProjectScan?.config?.deadCode ?? true
+		});
+		if (workspaceDeadCodeOwner !== null) recordCount(METRIC.scanWorkspaceMaintainabilityShared, 1, { projectCount: projectScans.length });
+		const projectScanExecutionContext = {
+			flags,
+			resolvedDirectory,
+			scanOptions,
+			inspectProject,
+			scanDeadlineEpochMs,
+			baselineDiffPlan,
+			diffInfo,
+			isDiffMode,
+			isQuiet,
+			isMultiProject,
+			workspaceDeadCodeOwner,
+			precomputedSourceFiles: isMultiProject && !isDiffMode ? await collectProjectSourceFiles(resolvedDirectory, projectScans.map((projectScan) => projectScan.directory)) : null,
+			projectScans,
+			workspaceProjectDirectories,
+			baselineRef,
+			savedBaseline,
+			scope,
+			changedLineRanges
+		};
+		const projectBatch = await runProjectScanBatch({
+			projects: projectScans,
+			isQuiet,
+			isSilent: scanOptions.silent === true,
+			oxlintConcurrency,
+			scanProject: (projectScan) => runConfiguredProjectScan({
+				context: projectScanExecutionContext,
+				projectScan
+			})
+		});
+		const completedScans = await retryMissingProjectScores(projectBatch.completedScans.map((completedScan) => ({
+			...completedScan,
+			isScoreDisabled: scanOptions.noScore ?? completedScan.config?.noScore ?? false
+		})));
+		const skippedProjects = projectBatch.skippedScans;
+		reportSkippedProjects({
+			skippedProjects,
+			isQuiet
+		});
+		if (!isQuiet && isMultiProject && completedScans.length > 0) await runPromise(printCompletedScansHeadless({
+			categoryFilters,
+			completedScans,
+			elapsedMilliseconds: projectBatch.elapsedMilliseconds,
+			noScoreMessage: "Score unavailable.",
+			outputDirectory: flags.outputDir,
+			outputSurface: scanOptions.outputSurface ?? "cli",
+			projectName: path$1.basename(resolvedDirectory),
+			verbose: Boolean(flags.verbose)
+		}));
+		const selectedSurfaceDiagnostics = filterDiagnosticsByCategories(filterScansForSurface(completedScans, scanOptions.outputSurface ?? "cli"), categoryFilters);
+		const didScansWriteDump = isMultiProject ? !isQuiet && completedScans.length > 0 : completedScans.length > 0;
+		if (flags.outputDir && !didScansWriteDump) await runPromise(printDiagnosticsDump(selectedSurfaceDiagnostics, flags.outputDir, false, isQuiet ? "stderr" : "stdout"));
+		finalizeCliScans({
+			completedScans,
+			skippedProjects,
+			mode: baselineRef || savedBaseline ? "baseline" : isDiffMode ? "diff" : "full",
+			diff: isDiffMode ? diffInfo : null,
+			baselineIntended: Boolean(savedBaseline) || scope === "changed" && diffInfo !== null,
+			emptyComparison: isDiffMode && baselineDiffPlan !== null ? {
+				baseRef: flags.baseline ?? baselineRef ?? "",
+				source: savedBaseline ? "baseline" : "base",
+				baselineFile: flags.baseline,
+				matchedCount: 0,
+				baseTotalCount: 0,
+				fixedCount: 0
+			} : void 0,
+			isJsonMode,
+			isScoreOnly,
+			flags,
+			categoryFilters,
+			userConfig,
+			resolvedDirectory,
+			startTime
+		});
+		if (!isQuiet && !skipPrompts && process.stdout.isTTY === true && !isCiOrCodingAgentEnvironment() && selectedSurfaceDiagnostics.length > 0) {
+			await handoffToAgent({
+				diagnostics: selectedSurfaceDiagnostics,
+				projectName: path$1.basename(resolvedDirectory),
+				rootDirectory: resolvedDirectory,
+				interactive: true,
+				outputDirectory: flags.outputDir
+			});
+			return;
+		}
+		const setupProjectRoot = resolveInstallSetupProjectRoot({
+			scanRoot: resolvedDirectory,
+			scanDirectories: projectDirectories
+		});
+		if (setupProjectRoot !== null) {
+			if (shouldShowAgentInstallHint({
+				projectRoot: setupProjectRoot,
+				hasCompletedScan: completedScans.length > 0,
+				isJsonMode,
+				isScoreOnly,
+				isStaged: Boolean(flags.staged)
+			})) {
+				printAgentInstallHint();
+				recordCount(METRIC.agentInstallHintShown, 1);
+				disableSetupPrompt(setupProjectRoot);
+			}
+		}
+	} catch (error) {
+		scanStartupSpinner?.stop();
+		const isUserError = isExpectedUserError(error);
+		const sentryEventId = isUserError ? void 0 : await reportErrorToSentry(error);
+		if (isDebugFlagEnabled()) await Promise.all([flushSentry(), shutdownTelemetry()]);
+		if (isJsonMode) {
+			writeJsonErrorReport(error, sentryEventId);
+			process.exitCode = 1;
+			return;
+		}
+		if (isUserError) {
+			handleUserError(error);
+			return;
+		}
+		handleError(error, { sentryEventId });
+	}
+};
+//#endregion
+export { warnDeprecatedFailOn as n, runProjectMigrations as r, inspectAction as t };
+
+//# sourceMappingURL=inspect-BJleAXM5.js.map
+//# debugId=65990807-f013-5921-8eed-6f4a9b0e3c0b

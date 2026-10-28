@@ -1,0 +1,97 @@
+import { A as FRAMEWORK_TOKENS, D as ScannedFile, E as ScanFinding, O as Capability, S as BaseRuleContext, T as FileScan, _ as RuleExecution, a as shouldReadSecurityScanContent, b as RuleSeverity, c as UNBOUNDED_CROSS_FILE_RULE_IDS, d as CROSS_FILE_RULE_IDS, f as MOTION_LIBRARY_PACKAGES, g as Rule, h as OxlintRuleSeverity, i as classifySecurityScanFile, j as FrameworkToken, k as CapabilityQuery, l as collectCrossFileDependencyProbes, m as REACT_COMPILER_RULES, n as REACT_NATIVE_DEPENDENCY_PREFIXES, o as resetFilesystemCaches, p as EXTERNAL_RULES, r as isReactNativeDependencyName, s as CROSS_FILE_DEPENDENCY_COLLECTORS, t as REACT_NATIVE_DEPENDENCY_NAMES, u as CrossFileProbeTrace, v as RuleFramework, w as EsTreeNode, x as RuleVisitors, y as RuleRegistryEntry } from "./react-native-dependency-names-wQiIw9Gw.js";
+
+//#region src/plugin/utils/rule-plugin.d.ts
+interface HostRule extends Omit<Rule, "create"> {
+  create: (context: BaseRuleContext) => RuleVisitors;
+}
+interface RulePlugin {
+  meta: {
+    name: string;
+  };
+  rules: Record<string, HostRule>;
+}
+//#endregion
+//#region src/plugin/react-doctor-plugin.d.ts
+declare const plugin: RulePlugin;
+//#endregion
+//#region src/rules.d.ts
+declare const REACT_DOCTOR_RULES: readonly RuleRegistryEntry[];
+declare const REACT_DOCTOR_PROJECT_RULES: RuleRegistryEntry[];
+declare const REACT_DOCTOR_OPT_IN_PROJECT_RULE_IDS: ReadonlySet<string>;
+declare const RULES: readonly [...RuleRegistryEntry[], {
+  readonly key: "react-hooks-js/set-state-in-render";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/immutability";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/refs";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/purity";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/hooks";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/set-state-in-effect";
+  readonly source: "react-compiler";
+  readonly severity: "warn";
+}, {
+  readonly key: "react-hooks-js/globals";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/error-boundaries";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/preserve-manual-memoization";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/unsupported-syntax";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/component-hook-factories";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/static-components";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/use-memo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/void-use-memo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/incompatible-library";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/todo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}];
+declare const RECOMMENDED_RULES: Record<string, OxlintRuleSeverity>;
+declare const NEXTJS_RULES: Record<string, OxlintRuleSeverity>;
+declare const REACT_NATIVE_RULES: Record<string, OxlintRuleSeverity>;
+declare const TANSTACK_START_RULES: Record<string, OxlintRuleSeverity>;
+declare const TANSTACK_QUERY_RULES: Record<string, OxlintRuleSeverity>;
+declare const PREACT_RULES: Record<string, OxlintRuleSeverity>;
+declare const ALL_REACT_DOCTOR_RULES: Record<string, OxlintRuleSeverity>;
+declare const ALL_REACT_DOCTOR_RULE_KEYS: ReadonlySet<string>;
+declare const FRAMEWORK_SPECIFIC_RULE_KEYS: ReadonlySet<string>;
+//#endregion
+export { ALL_REACT_DOCTOR_RULES, ALL_REACT_DOCTOR_RULE_KEYS, CROSS_FILE_DEPENDENCY_COLLECTORS, CROSS_FILE_RULE_IDS, type Capability, type CapabilityQuery, type CrossFileProbeTrace, EXTERNAL_RULES, type EsTreeNode, FRAMEWORK_SPECIFIC_RULE_KEYS, FRAMEWORK_TOKENS, type FileScan, type FrameworkToken, MOTION_LIBRARY_PACKAGES, NEXTJS_RULES, type OxlintRuleSeverity, PREACT_RULES, REACT_COMPILER_RULES, REACT_DOCTOR_OPT_IN_PROJECT_RULE_IDS, REACT_DOCTOR_PROJECT_RULES, REACT_DOCTOR_RULES, REACT_NATIVE_DEPENDENCY_NAMES, REACT_NATIVE_DEPENDENCY_PREFIXES, REACT_NATIVE_RULES, RECOMMENDED_RULES, RULES, type Rule, type RuleExecution, type RuleFramework, type RulePlugin, type RuleSeverity, type RuleVisitors, type ScanFinding, type ScannedFile, TANSTACK_QUERY_RULES, TANSTACK_START_RULES, UNBOUNDED_CROSS_FILE_RULE_IDS, classifySecurityScanFile, collectCrossFileDependencyProbes, plugin as default, isReactNativeDependencyName, resetFilesystemCaches as resetManifestCaches, shouldReadSecurityScanContent };
+//# sourceMappingURL=index.d.ts.map

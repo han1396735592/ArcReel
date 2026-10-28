@@ -1,0 +1,341 @@
+import { StaticImport } from "oxc-parser";
+import { TSESTree } from "@typescript-eslint/types";
+
+//#region src/plugin/utils/capability.d.ts
+declare const FRAMEWORK_TOKENS: readonly ["nextjs", "astro", "vite", "cra", "remix", "gatsby", "expo", "react-native", "tanstack-start", "preact", "unknown"];
+type FrameworkToken = (typeof FRAMEWORK_TOKENS)[number];
+type Capability = FrameworkToken | "react" | "remotion" | "pure-preact" | "react-native" | "server-actions" | "ssr" | "client-only" | "expo:54" | "nextjs:static-export" | "nextjs:15" | "nextjs:16" | "tailwind" | "tailwind:3.4" | "tailwind:4" | "shadcn" | "radix-ui" | "base-ui" | "react-aria" | "tanstack-table" | "tanstack-virtual" | "tanstack-form" | "zod" | "zod:4" | "mobx" | "mobx-react" | "mobx-react-lite" | "mobx-react-binding" | "mobx-react-binding-observer-memo-guard" | "mobx-react-observer-memo-guard" | "mobx-react-lite-observer-memo-guard" | "mobx-state-tree" | "mobx-react-observer" | "zustand" | "typescript" | "react-compiler" | "reanimated" | "reanimated:4" | "tanstack-query" | "valtio" | "i18n" | "styled-components" | "styled-components:6" | "three" | "r3f" | "react-router" | "react-router-framework" | "react-router:6.4" | "react-router:6.7" | "react-router:6.9" | "react-router:6.19" | "react-router:7" | "react-router:7.8" | "react-router:7.9" | "react-router:7.10" | "react-router:7.15" | "react-router:8" | "pre-es2023" | "target-blank-needs-explicit-protection" | "target-blank-needs-noreferrer" | `react:${number}` | `preact:${number}` | `remotion:${number}` | `valtio:${number}` | `mobx:${number}` | `zustand:${number}` | `three:${number}` | `r3f:${number}`;
+type CapabilityQuery = (capability: Capability) => boolean;
+//#endregion
+//#region src/plugin/utils/file-scan.d.ts
+interface ScannedFile {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+  readonly content: string;
+  readonly isGeneratedBundle: boolean;
+}
+interface ScanFinding {
+  readonly message: string;
+  readonly line: number;
+  readonly column: number;
+  readonly severity?: "error" | "warn";
+  readonly title?: string;
+  readonly help?: string;
+}
+interface FileScan {
+  (file: ScannedFile): ScanFinding[];
+}
+//#endregion
+//#region src/plugin/utils/es-tree-node.d.ts
+type WithLooseParent<NodeType> = NodeType extends NodeType ? Omit<NodeType, "parent"> & {
+  parent?: EsTreeNode | null;
+} : never;
+type EsTreeNode = WithLooseParent<TSESTree.Node>;
+//#endregion
+//#region src/plugin/utils/report-descriptor.d.ts
+interface ReportDescriptor {
+  node: EsTreeNode;
+  message: string;
+}
+//#endregion
+//#region src/plugin/semantic/control-flow-graph.d.ts
+type CfgEdgeKind = "uncond" | "cond" | "throw";
+interface CfgEdge {
+  readonly from: BasicBlock;
+  readonly to: BasicBlock;
+  readonly kind: CfgEdgeKind;
+}
+interface BasicBlock {
+  readonly id: number;
+  readonly nodes: EsTreeNode[];
+  readonly successors: CfgEdge[];
+  readonly predecessors: CfgEdge[];
+}
+interface FunctionCfg {
+  readonly owner: EsTreeNode;
+  readonly entry: BasicBlock;
+  readonly exit: BasicBlock;
+  readonly blocks: BasicBlock[];
+  readonly blockOf: (node: EsTreeNode) => BasicBlock | null;
+}
+interface ControlFlowAnalysis {
+  readonly cfgFor: (functionLike: EsTreeNode) => FunctionCfg | null;
+  readonly enclosingFunction: (node: EsTreeNode) => EsTreeNode | null;
+  readonly isUnconditionalFromEntry: (node: EsTreeNode) => boolean;
+}
+//#endregion
+//#region src/plugin/semantic/scope-analysis.d.ts
+type SymbolKind = "var" | "let" | "const" | "using" | "function" | "class" | "parameter" | "import" | "ts-import-equals" | "ts-enum" | "ts-type-alias" | "ts-interface" | "ts-module" | "catch-clause-parameter";
+type ScopeKind = "module" | "function" | "arrow-function" | "method" | "block" | "class" | "catch" | "for" | "switch" | "with" | "ts-module" | "ts-enum";
+interface SymbolDescriptor {
+  readonly id: number;
+  readonly name: string;
+  readonly kind: SymbolKind;
+  readonly bindingIdentifier: EsTreeNode;
+  readonly declarationNode: EsTreeNode;
+  readonly scope: ScopeDescriptor;
+  readonly initializer: EsTreeNode | null;
+  readonly references: ReferenceDescriptor[];
+}
+type ReferenceFlag = "read" | "write" | "read-write";
+interface ReferenceDescriptor {
+  readonly id: number;
+  readonly identifier: EsTreeNode;
+  resolvedSymbol: SymbolDescriptor | null;
+  readonly flag: ReferenceFlag;
+  readonly scope: ScopeDescriptor;
+}
+interface ScopeDescriptor {
+  readonly id: number;
+  readonly kind: ScopeKind;
+  readonly node: EsTreeNode;
+  readonly parent: ScopeDescriptor | null;
+  readonly children: ScopeDescriptor[];
+  readonly symbols: SymbolDescriptor[];
+  readonly references: ReferenceDescriptor[];
+  readonly symbolsByName: Map<string, SymbolDescriptor>;
+}
+interface ScopeAnalysis {
+  readonly rootScope: ScopeDescriptor;
+  readonly scopeFor: (node: EsTreeNode) => ScopeDescriptor;
+  readonly ownScopeFor: (node: EsTreeNode) => ScopeDescriptor | null;
+  readonly symbolFor: (identifier: EsTreeNode) => SymbolDescriptor | null;
+  readonly referenceFor: (identifier: EsTreeNode) => ReferenceDescriptor | null;
+  readonly isGlobalReference: (identifier: EsTreeNode) => boolean;
+}
+//#endregion
+//#region src/plugin/utils/rule-context.d.ts
+interface BaseRuleSourceCode {
+  readonly ast?: EsTreeNode;
+  getText?: (node?: EsTreeNode | null) => string;
+}
+interface BaseRuleContext {
+  report: (descriptor: ReportDescriptor) => void;
+  readonly filename?: string;
+  /**
+   * @deprecated Rules use `context.filename`. Read only as a fallback by
+   * `wrapWithSemanticContext`; ESLint implements it as a `this`-bound class
+   * method, so it must be called on the host context, never a detached
+   * reference.
+   */
+  getFilename?: () => string | undefined;
+  readonly settings?: Readonly<Record<string, unknown>>;
+  readonly sourceCode?: BaseRuleSourceCode;
+}
+interface RuleContext extends Omit<BaseRuleContext, "getFilename"> {
+  readonly scopes: ScopeAnalysis;
+  readonly cfg: ControlFlowAnalysis;
+}
+//#endregion
+//#region src/plugin/utils/rule-visitors.d.ts
+interface RuleVisitors {
+  [selector: string]: ((node: any) => void) | (() => void);
+}
+//#endregion
+//#region src/plugin/utils/rule.d.ts
+type RuleSeverity = "error" | "warn";
+type RuleExecution = "project";
+type RuleFramework = "global" | "nextjs" | "react-native" | "tanstack-start" | "tanstack-query" | "preact";
+interface Rule {
+  diffScope?: "line" | "jsx-element" | "function" | "file";
+  id: string;
+  title?: string;
+  severity: RuleSeverity;
+  category?: string;
+  framework?: RuleFramework;
+  requires?: ReadonlyArray<Capability>;
+  minimumInkVersion?: string;
+  disabledWhen?: ReadonlyArray<Capability>;
+  tags?: ReadonlyArray<string>;
+  matchByOccurrence?: boolean;
+  defaultEnabled?: boolean;
+  lifecycle?: "retired";
+  execution?: RuleExecution;
+  scan?: FileScan;
+  committedFilesOnly?: boolean;
+  recommendation?: string;
+  recommendationFor?: (hasCapability: CapabilityQuery) => string | undefined;
+  create: (context: RuleContext) => RuleVisitors;
+}
+interface RuleRegistryEntry {
+  readonly key: string;
+  readonly id: string;
+  readonly source: "react-doctor";
+  readonly originallyExternal: boolean;
+  readonly rule: Rule & Required<Pick<Rule, "framework" | "category">>;
+}
+//#endregion
+//#region src/types.d.ts
+type OxlintRuleSeverity = RuleSeverity | "off";
+//#endregion
+//#region src/external-rules.d.ts
+declare const EXTERNAL_RULES: readonly [{
+  readonly key: "react-hooks-js/set-state-in-render";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/immutability";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/refs";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/purity";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/hooks";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/set-state-in-effect";
+  readonly source: "react-compiler";
+  readonly severity: "warn";
+}, {
+  readonly key: "react-hooks-js/globals";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/error-boundaries";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/preserve-manual-memoization";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/unsupported-syntax";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/component-hook-factories";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/static-components";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/use-memo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/void-use-memo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/incompatible-library";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}, {
+  readonly key: "react-hooks-js/todo";
+  readonly source: "react-compiler";
+  readonly severity: "error";
+}];
+declare const REACT_COMPILER_RULES: Record<string, OxlintRuleSeverity>;
+//#endregion
+//#region src/plugin/constants/style.d.ts
+declare const MOTION_LIBRARY_PACKAGES: Set<string>;
+//#endregion
+//#region src/plugin/constants/cross-file-rule-ids.d.ts
+declare const CROSS_FILE_RULE_IDS: ReadonlySet<string>;
+//#endregion
+//#region src/plugin/utils/cross-file-probe-recorder.d.ts
+interface CrossFileProbeTrace {
+  /** Paths whose existence classification (file / dir / none) was consulted. */
+  readonly existencePaths: Set<string>;
+  /** Paths whose content (bytes, exports, parse) was consulted. */
+  readonly contentPaths: Set<string>;
+}
+//#endregion
+//#region src/plugin/cross-file-dependencies.d.ts
+/**
+ * Per-rule cross-file dependency collectors — the foundation of the sidecar
+ * lint cache's dependency fingerprints (`@react-doctor/core`,
+ * `runners/oxlint/sidecar-lint-cache.ts`).
+ *
+ * A collector re-runs the SAME resolver helpers its rule calls at lint time
+ * (import resolution, barrel following, ancestor-layout walks, package.json
+ * classification) under the probe recorder
+ * (`utils/cross-file-probe-recorder.ts`), so the recorded probe set is the
+ * exact set of filesystem facts the rule's execution consulted — including
+ * the negative probes (extension candidates that did NOT exist) that make
+ * resolution shadowing detectable when a new file appears.
+ *
+ * SOUNDNESS INVARIANT — each collector's probe set must be a SUPERSET of
+ * every filesystem read its rule can make while linting the file, for any
+ * file content and any filesystem state:
+ *
+ *   - Over-approximation is always safe (extra probes only cause a spurious
+ *     re-lint); under-approximation is forbidden (a missed probe could
+ *     replay a stale verdict).
+ *   - Where a rule gates its cross-file reads on in-file conditions, a
+ *     collector may skip the gate (probe more) or must mirror it EXACTLY
+ *     (probe the same). Each collector documents which it does per gate.
+ *   - The replay argument: the stored probe set is the complete read set of
+ *     the collector's execution at store time. If every stored probe has
+ *     the same answer on a later scan, re-executing the collector — and
+ *     therefore the rule, whose reads are a subset — reproduces the same
+ *     execution step by step (the file's own content is pinned separately
+ *     by the cache key's content hash), so the stored diagnostics are
+ *     exactly what a fresh sidecar lint would produce.
+ *
+ * A cross-file rule WITHOUT a collector here must be listed in
+ * `UNBOUNDED_CROSS_FILE_RULE_IDS` — it then re-lints every file on every
+ * scan (the sound fallback). `cross-file-rule-ids.test.ts` in
+ * `@react-doctor/core` forces every `CROSS_FILE_RULE_IDS` entry into
+ * exactly one of the two classifications.
+ */
+interface CrossFileDependencyCollectorInput {
+  /** Absolute, forward-slash-normalized path of the file being fingerprinted. */
+  readonly absoluteFilePath: string;
+  readonly sourceText: string;
+  /** oxc module record — the file's static import declarations. */
+  readonly staticImports: ReadonlyArray<StaticImport>;
+  /** Lazily materialized program (no parent references attached). */
+  readonly getProgram: () => EsTreeNode;
+}
+type CrossFileDependencyCollector = (input: CrossFileDependencyCollectorInput) => void;
+declare const CROSS_FILE_DEPENDENCY_COLLECTORS: ReadonlyMap<string, CrossFileDependencyCollector>;
+/**
+ * Cross-file rules whose dependency set CANNOT be soundly bounded — they are
+ * excluded from fingerprinting and re-lint every file on every scan. A new
+ * cross-file rule must be added either here or to
+ * `CROSS_FILE_DEPENDENCY_COLLECTORS` (the core guard test enforces the
+ * partition), forcing a conscious classification.
+ */
+declare const UNBOUNDED_CROSS_FILE_RULE_IDS: ReadonlySet<string>;
+/**
+ * Runs the collectors for `ruleIds` over one file and returns every
+ * filesystem probe they made — the file's cross-file dependency set.
+ *
+ * Returns `null` (caller must treat the file as unfingerprintable and always
+ * re-lint it) when the file has a fatal parse error — an execution the
+ * collectors cannot mirror — or when a requested rule has no collector.
+ */
+declare const collectCrossFileDependencyProbes: (input: {
+  absoluteFilePath: string;
+  sourceText: string;
+  ruleIds: ReadonlyArray<string>;
+}) => CrossFileProbeTrace | null;
+//#endregion
+//#region src/plugin/utils/reset-filesystem-caches.d.ts
+declare const resetFilesystemCaches: () => void;
+//#endregion
+//#region src/plugin/rules/security-scan/utils/classify-security-scan-file.d.ts
+interface SecurityScanFileClassification {
+  readonly bucket: "priority" | "artifact" | "other";
+  readonly isGeneratedBundleByName: boolean;
+}
+declare const classifySecurityScanFile: (relativePath: string) => SecurityScanFileClassification | null;
+declare const shouldReadSecurityScanContent: (relativePath: string, isGeneratedBundle: boolean) => boolean;
+//#endregion
+//#region src/react-native-dependency-names.d.ts
+declare const REACT_NATIVE_DEPENDENCY_NAMES: ReadonlySet<string>;
+declare const REACT_NATIVE_DEPENDENCY_PREFIXES: ReadonlyArray<string>;
+declare const isReactNativeDependencyName: (dependencyName: string) => boolean;
+//#endregion
+export { FRAMEWORK_TOKENS as A, RuleContext as C, ScannedFile as D, ScanFinding as E, Capability as O, BaseRuleContext as S, FileScan as T, RuleExecution as _, shouldReadSecurityScanContent as a, RuleSeverity as b, UNBOUNDED_CROSS_FILE_RULE_IDS as c, CROSS_FILE_RULE_IDS as d, MOTION_LIBRARY_PACKAGES as f, Rule as g, OxlintRuleSeverity as h, classifySecurityScanFile as i, FrameworkToken as j, CapabilityQuery as k, collectCrossFileDependencyProbes as l, REACT_COMPILER_RULES as m, REACT_NATIVE_DEPENDENCY_PREFIXES as n, resetFilesystemCaches as o, EXTERNAL_RULES as p, isReactNativeDependencyName as r, CROSS_FILE_DEPENDENCY_COLLECTORS as s, REACT_NATIVE_DEPENDENCY_NAMES as t, CrossFileProbeTrace as u, RuleFramework as v, EsTreeNode as w, RuleVisitors as x, RuleRegistryEntry as y };
+//# sourceMappingURL=react-native-dependency-names-wQiIw9Gw.d.ts.map

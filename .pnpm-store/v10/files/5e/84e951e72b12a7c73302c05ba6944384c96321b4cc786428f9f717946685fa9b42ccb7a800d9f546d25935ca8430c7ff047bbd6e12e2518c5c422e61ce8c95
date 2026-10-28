@@ -1,0 +1,240 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="d8378f9a-cdda-580b-882b-1a15077e435d")}catch(e){}}();
+import { t as unrefStdin } from "./unref-stdin-D-NZBFpg.js";
+import { a as RUNTIME_SCAN_LOCAL_DEV_PORTS, t as sanitizeRuntimeUrl, u as RUNTIME_SCAN_MAX_STRING_LENGTH } from "./sanitize-runtime-url-RZN3i1Kf.js";
+import { a as useExitOnCtrlC, c as Spinner, d as useInput, h as Box, i as import_react, m as Text, n as registerMountedTuiRenderer, o as terminalSymbols, p as render, r as useStdoutDimensions, s as isPrintableInput, t as require_jsx_runtime } from "./jsx-runtime-mnxPtbiq.js";
+import * as http from "node:http";
+//#region src/cli/runtime-scan/detect-local-runtime-urls.ts
+const LOCAL_HTTP_HOSTS = ["127.0.0.1", "::1"];
+const probeLocalHttpHost = (port, host) => new Promise((resolve) => {
+	let didResolve = false;
+	const resolveOnce = (isReachable) => {
+		if (didResolve) return;
+		didResolve = true;
+		resolve(isReachable);
+	};
+	const request = http.request({
+		agent: false,
+		host,
+		method: "HEAD",
+		path: "/",
+		port
+	}, (response) => {
+		response.resume();
+		resolveOnce(true);
+	});
+	request.setTimeout(300, () => request.destroy());
+	request.on("error", () => resolveOnce(false));
+	request.on("close", () => resolveOnce(false));
+	request.end();
+});
+const probeLocalHttpPort = async (port) => {
+	if (!(await Promise.all(LOCAL_HTTP_HOSTS.map((host) => probeLocalHttpHost(port, host)))).some(Boolean)) return null;
+	return {
+		port,
+		url: `http://localhost:${port}`
+	};
+};
+const detectLocalRuntimeUrls = async (ports = RUNTIME_SCAN_LOCAL_DEV_PORTS) => {
+	const probeResults = await Promise.all(ports.map(probeLocalHttpPort));
+	const suggestions = [];
+	for (const probeResult of probeResults) if (probeResult !== null) suggestions.push(probeResult);
+	return suggestions;
+};
+//#endregion
+//#region src/cli/ink/prompt-runtime-scan-url.tsx
+var import_jsx_runtime = require_jsx_runtime();
+const RuntimeScanUrlPrompt = ({ discoverLocalUrls = detectLocalRuntimeUrls, onSubmit }) => {
+	const [mode, setMode] = (0, import_react.useState)("select");
+	const [suggestions, setSuggestions] = (0, import_react.useState)([]);
+	const [isDetecting, setIsDetecting] = (0, import_react.useState)(true);
+	const [selectedIndex, setSelectedIndex] = (0, import_react.useState)(0);
+	const [url, setUrl] = (0, import_react.useState)("");
+	const [validationMessage, setValidationMessage] = (0, import_react.useState)(null);
+	const { columns: terminalColumns, rows: terminalRows } = useStdoutDimensions();
+	useExitOnCtrlC();
+	(0, import_react.useEffect)(() => {
+		let isMounted = true;
+		discoverLocalUrls().then((detectedSuggestions) => {
+			if (!isMounted) return;
+			setSuggestions(detectedSuggestions);
+			setIsDetecting(false);
+		}, () => {
+			if (isMounted) setIsDetecting(false);
+		});
+		return () => {
+			isMounted = false;
+		};
+	}, [discoverLocalUrls]);
+	const updateUrl = (nextUrl) => {
+		setUrl(nextUrl.slice(0, RUNTIME_SCAN_MAX_STRING_LENGTH));
+		setValidationMessage(null);
+	};
+	useInput((input, key) => {
+		if (mode === "select") {
+			const optionCount = suggestions.length + 1;
+			if (key.escape || input === "q") return onSubmit(null);
+			if (key.upArrow || input === "k") return setSelectedIndex(Math.max(0, selectedIndex - 1));
+			if (key.downArrow || input === "j") return setSelectedIndex(Math.min(optionCount - 1, selectedIndex + 1));
+			if (key.return) {
+				const selectedSuggestion = suggestions[selectedIndex];
+				if (selectedSuggestion !== void 0) return onSubmit(selectedSuggestion.url);
+				setMode("custom");
+				return;
+			}
+			if (isPrintableInput(input) && !key.ctrl && !key.meta) {
+				setMode("custom");
+				updateUrl(input);
+			}
+			return;
+		}
+		if (key.escape) return setMode("select");
+		if (key.backspace || key.delete) return updateUrl(url.slice(0, -1));
+		if (key.ctrl && input === "u") return updateUrl("");
+		if (key.return) {
+			const trimmedUrl = url.trim();
+			try {
+				sanitizeRuntimeUrl(trimmedUrl);
+				onSubmit(trimmedUrl);
+			} catch {
+				setValidationMessage("Enter an absolute URL starting with http:// or https://.");
+			}
+			return;
+		}
+		if (isPrintableInput(input) && !key.ctrl && !key.meta) updateUrl(url + input);
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		alignItems: "center",
+		height: terminalRows,
+		justifyContent: "center",
+		width: terminalColumns,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+			borderColor: "magenta",
+			borderStyle: "round",
+			flexDirection: "column",
+			paddingX: 1,
+			width: Math.min(terminalColumns, 72),
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					color: "magenta",
+					bold: true,
+					children: "React Doctor"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					bold: true,
+					children: "Choose an app to scan"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "We’ll open Chrome and scan one interaction."
+				}),
+				mode === "select" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+					flexDirection: "column",
+					marginTop: 1,
+					children: [
+						isDetecting ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+							dimColor: true,
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+									color: "cyan",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { type: "dots" })
+								}),
+								" ",
+								"Looking for local apps…"
+							]
+						}) : null,
+						!isDetecting && suggestions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							dimColor: true,
+							children: "No local HTTP apps detected."
+						}) : null,
+						suggestions.map((suggestion, suggestionIndex) => {
+							const isSelected = suggestionIndex === selectedIndex;
+							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+								bold: isSelected,
+								color: isSelected ? "cyan" : void 0,
+								children: [
+									isSelected ? terminalSymbols.pointer : terminalSymbols.pointerSmall,
+									" ",
+									suggestion.url,
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+										dimColor: true,
+										children: " detected"
+									})
+								]
+							}, suggestion.url);
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+							bold: selectedIndex === suggestions.length,
+							color: selectedIndex === suggestions.length ? "cyan" : void 0,
+							children: [
+								selectedIndex === suggestions.length ? terminalSymbols.pointer : terminalSymbols.pointerSmall,
+								" ",
+								"Enter another URL"
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+							marginTop: 1,
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								dimColor: true,
+								children: "↑↓ choose · Enter continue · Esc cancel"
+							})
+						})
+					]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+					flexDirection: "column",
+					marginTop: 1,
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							dimColor: true,
+							children: "App URL"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+							wrap: "truncate-end",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+									color: "cyan",
+									children: "› "
+								}),
+								url,
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+									inverse: true,
+									children: " "
+								})
+							]
+						}),
+						validationMessage === null ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							color: "red",
+							children: validationMessage
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+							marginTop: 1,
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								dimColor: true,
+								children: "Enter continue · Esc back · Ctrl+U clear"
+							})
+						})
+					]
+				})
+			]
+		})
+	});
+};
+const promptRuntimeScanUrl = () => new Promise((resolve) => {
+	let disposeRenderer = () => {};
+	const submitUrl = (url) => {
+		disposeRenderer();
+		unrefStdin();
+		resolve(url);
+	};
+	disposeRenderer = registerMountedTuiRenderer(render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RuntimeScanUrlPrompt, { onSubmit: submitUrl }), {
+		alternateScreen: true,
+		exitOnCtrlC: false,
+		stdin: process.stdin,
+		stdout: process.stderr
+	}));
+});
+//#endregion
+export { promptRuntimeScanUrl };
+
+//# sourceMappingURL=prompt-runtime-scan-url-DkntQoEi.js.map
+//# debugId=d8378f9a-cdda-580b-882b-1a15077e435d

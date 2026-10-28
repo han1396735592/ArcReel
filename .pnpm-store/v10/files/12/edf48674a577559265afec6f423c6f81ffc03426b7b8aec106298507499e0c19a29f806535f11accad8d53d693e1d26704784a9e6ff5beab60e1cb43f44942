@@ -1,0 +1,14 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="5c0b38d2-ff8c-52b8-baeb-518d4534f99a")}catch(e){}}();
+import { t as typescriptBinding } from "./_react-doctor_require-typescript-DXQDYeWK.js";
+//#region ../core/src/utils/unwrap-typescript-expression.ts
+const unwrapTypescriptExpression = (expression) => {
+	let currentExpression = expression;
+	while (typescriptBinding.isParenthesizedExpression(currentExpression) || typescriptBinding.isAsExpression(currentExpression) || typescriptBinding.isSatisfiesExpression(currentExpression) || typescriptBinding.isNonNullExpression(currentExpression) || typescriptBinding.isTypeAssertionExpression(currentExpression)) currentExpression = currentExpression.expression;
+	return currentExpression;
+};
+//#endregion
+export { unwrapTypescriptExpression as t };
+
+//# sourceMappingURL=unwrap-typescript-expression-CrEPQUWz.js.map
+//# debugId=5c0b38d2-ff8c-52b8-baeb-518d4534f99a

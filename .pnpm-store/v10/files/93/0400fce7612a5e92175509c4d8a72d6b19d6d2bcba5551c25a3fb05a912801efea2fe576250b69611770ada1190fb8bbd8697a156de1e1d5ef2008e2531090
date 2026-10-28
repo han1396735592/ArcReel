@@ -1,0 +1,23 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="3b4846d0-71fc-51c9-9cd3-3fafe55e7a28")}catch(e){}}();
+const GIT_CHECK_ATTR_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
+const OXLINT_WORKER_JOB_END_MARKER = "__REACT_DOCTOR_OXLINT_JOB_END__";
+const REACT_DOCTOR_PLUGIN_RESET_HOOK_KEY = Symbol.for("react-doctor.reset-filesystem-caches");
+new Map(Object.entries({
+	Security: "An attacker can read user data, act as your users, or run code you never shipped.",
+	Bugs: "Real users hit crashes, wrong output, or state that silently corrupts.",
+	Performance: "Users feel extra latency and wasted renders on every interaction.",
+	Accessibility: "Users on screen readers, keyboards, or assistive tech get locked out.",
+	Maintainability: "Every future change gets slower and riskier to make."
+}));
+const MAX_GLOB_PATTERN_LENGTH_CHARS = 1024;
+process.env.REACT_DOCTOR_CORE_VERSION;
+const JSX_DUPLICATION_DEFAULT_MAX_SOURCE_FILES = 5e3;
+const JSX_DUPLICATION_DEFAULT_MAX_SOURCE_LENGTH_CHARS = 1e6;
+const JSX_DUPLICATION_DEFAULT_MAX_JSX_NODES = 5e4;
+const JSX_DUPLICATION_SOURCE_FILE_PATTERN = /\.[cm]?(?:jsx?|tsx)$/;
+//#endregion
+export { MAX_GLOB_PATTERN_LENGTH_CHARS as a, GIT_CHECK_ATTR_MAX_BUFFER_BYTES as c, JSX_DUPLICATION_SOURCE_FILE_PATTERN as i, JSX_DUPLICATION_DEFAULT_MAX_SOURCE_FILES as n, OXLINT_WORKER_JOB_END_MARKER as o, JSX_DUPLICATION_DEFAULT_MAX_SOURCE_LENGTH_CHARS as r, REACT_DOCTOR_PLUGIN_RESET_HOOK_KEY as s, JSX_DUPLICATION_DEFAULT_MAX_JSX_NODES as t };
+
+//# sourceMappingURL=constants-DNh19qg9.js.map
+//# debugId=3b4846d0-71fc-51c9-9cd3-3fafe55e7a28

@@ -1,0 +1,1037 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a2444fd7-ba97-5c97-b408-a7a41e230745")}catch(e){}}();
+import { createRequire } from "node:module";
+import * as fs$1 from "node:fs";
+import fs from "node:fs";
+import * as path$1 from "node:path";
+import { execFile, execFileSync, spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import * as os$1 from "node:os";
+import os from "node:os";
+import crypto from "node:crypto";
+import { Worker } from "node:worker_threads";
+import * as net from "node:net";
+//#region ../core/dist/constants-C7CkEi1m.js
+const HTML_FILE_PATTERN = /\.html$/i;
+const SOURCE_FILE_PATTERN = /\.(?:astro|tsx?|jsx?|mts|mjs|[hH][tT][mM][lL])$/;
+const GENERATED_BUNDLE_FILE_PATTERN = /\.(iife|umd|global|min)\.m?js$/i;
+const GENERATED_SOURCE_DIRECTORY_PATTERN = /(?:^|\/)__generated__\//;
+const TAILWIND_POSTCSS7_COMPAT_ALIAS = "npm:@tailwindcss/postcss7-compat";
+const MINIFIED_SNIFF_BYTES = 65536;
+const GIT_LS_FILES_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
+const GIT_SOURCE_LISTING_ARGUMENTS = [
+	"ls-files",
+	"-z",
+	"--stage",
+	"--others",
+	"--exclude-standard"
+];
+const GIT_CHECK_ATTR_MAX_BUFFER_BYTES = GIT_LS_FILES_MAX_BUFFER_BYTES;
+const SCANNED_DOT_DIRECTORIES = new Set([".dumi", ".storybook"]);
+const IGNORED_DIRECTORIES = new Set([
+	".angular",
+	".astro",
+	".cache",
+	".cloudflare",
+	".contentlayer",
+	".direnv",
+	".docusaurus",
+	".expo",
+	".firebase",
+	".git",
+	".gradle",
+	".hg",
+	".next",
+	".nuxt",
+	".nx",
+	".output",
+	".parcel-cache",
+	".serverless",
+	".svelte-kit",
+	".svn",
+	".terraform",
+	".turbo",
+	".venv",
+	".vercel",
+	".wrangler",
+	".yarn",
+	"build",
+	"coverage",
+	"dist",
+	"node_modules",
+	"out",
+	"storybook-static"
+]);
+const JSX_FILE_PATTERN = /\.(tsx|jsx)$/;
+const TYPESCRIPT_DECLARATION_FILE_PATTERN = /\.d\.(?:ts|mts|cts)$/;
+const OXLINT_IGNORED_DECLARATION_DIAGNOSTIC_CODES = new Set([
+	"TS(1036)",
+	"TS(1038)",
+	"TS(1183)",
+	"TS(1319)"
+]);
+const MILLISECONDS_PER_SECOND = 1e3;
+const PROJECT_ANALYSIS_WORKER_TIMEOUT_MS = 12e4;
+const PROJECT_ANALYSIS_WORKER_TIMEOUT_CEILING_MS = 6e5;
+const PROJECT_ANALYSIS_WORKER_MAX_OLD_SPACE_MB = 8192;
+const PROJECT_ANALYSIS_WORKER_MEMORY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
+const REACT_ROUTER_CAPABILITY_THRESHOLDS = [
+	{
+		capability: "react-router:6.4",
+		major: 6,
+		minor: 4
+	},
+	{
+		capability: "react-router:6.7",
+		major: 6,
+		minor: 7
+	},
+	{
+		capability: "react-router:6.9",
+		major: 6,
+		minor: 9
+	},
+	{
+		capability: "react-router:6.19",
+		major: 6,
+		minor: 19
+	},
+	{
+		capability: "react-router:7",
+		major: 7,
+		minor: 0
+	},
+	{
+		capability: "react-router:7.8",
+		major: 7,
+		minor: 8
+	},
+	{
+		capability: "react-router:7.9",
+		major: 7,
+		minor: 9
+	},
+	{
+		capability: "react-router:7.10",
+		major: 7,
+		minor: 10
+	},
+	{
+		capability: "react-router:7.15",
+		major: 7,
+		minor: 15
+	},
+	{
+		capability: "react-router:8",
+		major: 8,
+		minor: 0
+	}
+];
+const SCORE_API_URL = "https://www.react.doctor/api/score";
+const AXIOM_DEFAULT_DOMAIN = "https://api.axiom.co";
+const AXIOM_TRACES_PATH = "/v1/traces";
+const AXIOM_METRICS_PATH = "/v1/metrics";
+const AXIOM_DATASET_HEADER = "X-Axiom-Dataset";
+const AXIOM_METRICS_DATASET_HEADER = "x-axiom-metrics-dataset";
+const TELEMETRY_EXPORT_INTERVAL_MS = 6e5;
+const TELEMETRY_SHUTDOWN_TIMEOUT_MS = 1e3;
+const ENTERPRISE_CONTACT_URL = "https://react.doctor/enterprise";
+const SHARE_BASE_URL = "https://react.doctor/share";
+const CI_URL = "https://react.doctor/ci";
+const GITHUB_ACTIONS_SETUP_URL = "https://www.react.doctor/docs/ci-and-prs/github-actions-setup";
+const DOCS_URL = "https://react.doctor/docs";
+const DOCS_RULES_BASE_URL = `${DOCS_URL}/rules`;
+const CONFIG_SCHEMA_URL = "https://react.doctor/schema/config.json";
+const FETCH_TIMEOUT_MS = 1e4;
+const GITHUB_VIEWER_PERMISSION_TIMEOUT_MS = 2e3;
+const SPAWN_ARGS_MAX_LENGTH_CHARS = 24e3;
+const SPAWN_ARGS_MAX_LENGTH_CHARS_POSIX = 15e5;
+const SPAWN_ARGS_MAX_LENGTH_CHARS_DARWIN = 8e5;
+const NODE_VERSION_PROBE_TIMEOUT_MS = 5e3;
+const PER_WORKER_MEM_BUDGET_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_BRANCH_CANDIDATES = ["main", "master"];
+const ADOPTABLE_LINT_CONFIG_FILENAMES = [".oxlintrc.json", ".eslintrc.json"];
+const OXLINT_NODE_REQUIREMENT = "^20.19.0 || >=22.12.0";
+const GIT_SHOW_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const UNKNOWN_FUTURE_ES_YEAR = 9999;
+const TARGET_BLANK_BROWSER_SUPPORT = [
+	{
+		browserName: "chrome",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 16,
+		explicitNoopenerVersion: 49,
+		implicitNoopenerVersion: 88
+	},
+	{
+		browserName: "and_chr",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 16,
+		explicitNoopenerVersion: 49,
+		implicitNoopenerVersion: 88
+	},
+	{
+		browserName: "android",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 2.3,
+		explicitNoopenerVersion: 49,
+		implicitNoopenerVersion: 88
+	},
+	{
+		browserName: "edge",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 13,
+		explicitNoopenerVersion: 79,
+		implicitNoopenerVersion: 88
+	},
+	{
+		browserName: "firefox",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 33,
+		explicitNoopenerVersion: 52,
+		implicitNoopenerVersion: 79
+	},
+	{
+		browserName: "and_ff",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 33,
+		explicitNoopenerVersion: 52,
+		implicitNoopenerVersion: 79
+	},
+	{
+		browserName: "kaios",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 2.5,
+		explicitNoopenerVersion: 3,
+		implicitNoopenerVersion: 3
+	},
+	{
+		browserName: "safari",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 5,
+		explicitNoopenerVersion: 10.1,
+		implicitNoopenerVersion: 12.1
+	},
+	{
+		browserName: "ios_saf",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 4,
+		explicitNoopenerVersion: 10.3,
+		implicitNoopenerVersion: 12.2
+	},
+	{
+		browserName: "opera",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 15,
+		explicitNoopenerVersion: 36,
+		implicitNoopenerVersion: 74
+	},
+	{
+		browserName: "op_mob",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 80,
+		explicitNoopenerVersion: 80,
+		implicitNoopenerVersion: 80
+	},
+	{
+		browserName: "op_mini",
+		supportsTargetBlankBrowsingContext: false,
+		explicitNoreferrerVersion: null,
+		explicitNoopenerVersion: null,
+		implicitNoopenerVersion: null
+	},
+	{
+		browserName: "samsung",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 4,
+		explicitNoopenerVersion: 5,
+		implicitNoopenerVersion: 15
+	},
+	{
+		browserName: "and_uc",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 15.5,
+		explicitNoopenerVersion: 15.5,
+		implicitNoopenerVersion: null
+	},
+	{
+		browserName: "and_qq",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 14.9,
+		explicitNoopenerVersion: 14.9,
+		implicitNoopenerVersion: null
+	},
+	{
+		browserName: "baidu",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: 13.52,
+		explicitNoopenerVersion: 13.52,
+		implicitNoopenerVersion: null
+	},
+	{
+		browserName: "ie",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: null,
+		explicitNoopenerVersion: null,
+		implicitNoopenerVersion: null
+	},
+	{
+		browserName: "ie_mob",
+		supportsTargetBlankBrowsingContext: true,
+		explicitNoreferrerVersion: null,
+		explicitNoopenerVersion: null,
+		implicitNoopenerVersion: null
+	}
+];
+const ES_TARGET_YEAR_BY_NAME = {
+	es3: 1999,
+	es5: 2009,
+	es6: 2015,
+	es2015: 2015,
+	es2016: 2016,
+	es2017: 2017,
+	es2018: 2018,
+	es2019: 2019,
+	es2020: 2020,
+	es2021: 2021,
+	es2022: 2022,
+	es2023: 2023,
+	es2024: 2024,
+	es2025: 2025,
+	esnext: UNKNOWN_FUTURE_ES_YEAR
+};
+/**
+* tsconfig filenames probed when resolving a project's TypeScript
+* compiler options — the root config first, then a monorepo base config.
+*/
+const TSCONFIG_FILENAMES = ["tsconfig.json", "tsconfig.base.json"];
+const DISABLE_DIRECTIVE_BACKUP_DIRECTORY_SEGMENTS = [".react-doctor", "audit-backups"];
+/**
+* Project-config files that `StagedFiles.materialize` copies into
+* the temp directory alongside staged sources so oxlint resolves
+* `tsconfig` / `package.json` / lint configs the same way it would
+* in the working tree. Hoisted out of the staged-files helper so
+* the constant lives next to the rest of the IO budget knobs.
+*/
+const STAGED_FILES_PROJECT_CONFIG_FILENAMES = [
+	"tsconfig.json",
+	"tsconfig.base.json",
+	"package.json",
+	"doctor.config.ts",
+	"doctor.config.mts",
+	"doctor.config.cts",
+	"doctor.config.js",
+	"doctor.config.mjs",
+	"doctor.config.cjs",
+	"doctor.config.json",
+	"doctor.config.jsonc",
+	"oxlint.json",
+	".oxlintrc.json"
+];
+const CONFIG_FINGERPRINT_FILENAMES = [
+	"doctor.config.ts",
+	"doctor.config.mts",
+	"doctor.config.cts",
+	"doctor.config.js",
+	"doctor.config.mjs",
+	"doctor.config.cjs",
+	"doctor.config.json",
+	"doctor.config.jsonc",
+	"react-doctor.config.json",
+	"package.json",
+	"pnpm-workspace.yaml",
+	"tsconfig.json",
+	"tsconfig.base.json",
+	".oxlintrc.json",
+	".eslintrc.json",
+	"pnpm-lock.yaml",
+	"package-lock.json",
+	"yarn.lock",
+	"bun.lock",
+	"bun.lockb",
+	".gitignore"
+];
+const CANONICAL_GITHUB_URL = "https://github.com/millionco/react-doctor";
+const CANONICAL_DISCORD_URL = "https://react.doctor/discord";
+const SKILL_NAME = "react-doctor";
+const OXLINT_OUTPUT_MAX_BYTES = 50 * 1024 * 1024;
+const OXLINT_SPAWN_TIMEOUT_MS = 6e4;
+const NODE_COMPILE_CACHE_DIR_NAME = "node-compile-cache";
+const OXLINT_SPLIT_TOTAL_BUDGET_MS = 18e4;
+const ABORT_EXIT_CODES = new Set([134, 3221226505]);
+const OXLINT_WORKER_JOB_END_MARKER = "__REACT_DOCTOR_OXLINT_JOB_END__";
+const DUPLICATE_JSX_WORKER_IDLE_TIMEOUT_MS = 3e4;
+const REACT_COMPILER_DETECTION_WORKER_IDLE_TIMEOUT_MS = 3e4;
+const OXLINT_WORKER_TURBOFAN_INVOCATION_COUNT = 3e4;
+const OXLINT_WORKER_OLD_SPACE_MB_PER_NATIVE_THREAD = 4352;
+const OXLINT_OOM_RESCUE_BUDGET_MS = 6e4;
+const RECOMMENDED_PNPM_MINIMUM_RELEASE_AGE_MINUTES = 10080;
+const REACT_SERVER_DOM_PACKAGES = [
+	"react-server-dom-webpack",
+	"react-server-dom-parcel",
+	"react-server-dom-turbopack"
+];
+const REACT_BLOG_RSC_ADVISORY_URL = "https://react.dev/blog/2025/12/03/critical-security-vulnerability-in-react-server-components";
+const VERCEL_NEXTJS_SECURITY_RELEASE_URL = "https://vercel.com/changelog/next-js-may-2026-security-release";
+const DIAGNOSTIC_CATEGORY_BUCKETS = [
+	"Security",
+	"Bugs",
+	"Performance",
+	"Accessibility",
+	"Maintainability"
+];
+const OCCURRENCE_MATCHED_CATEGORIES = new Set(["Accessibility"]);
+const CATEGORY_IMPACT_BY_NAME = new Map(Object.entries({
+	Security: "An attacker can read user data, act as your users, or run code you never shipped.",
+	Bugs: "Real users hit crashes, wrong output, or state that silently corrupts.",
+	Performance: "Users feel extra latency and wasted renders on every interaction.",
+	Accessibility: "Users on screen readers, keyboards, or assistive tech get locked out.",
+	Maintainability: "Every future change gets slower and riskier to make."
+}));
+const getCategoryImpact = (category) => CATEGORY_IMPACT_BY_NAME.get(category);
+const APP_ONLY_RULE_KEYS = new Set([
+	"react-hooks-js/static-components",
+	"react-doctor/no-render-prop-children",
+	"react-doctor/prefer-explicit-variants"
+]);
+const COMPILER_CLEANUP_BUCKET = "compiler-cleanup";
+const COMPILER_CLEANUP_RULE_KEYS = new Set(["react-doctor/react-compiler-no-manual-memoization"]);
+const ROOT_CAUSE_GROUPABLE_RULE_KEYS = new Set([
+	"react-doctor/no-derived-state",
+	"react-doctor/no-derived-state-effect",
+	"react-doctor/no-derived-useState",
+	"react-doctor/no-adjust-state-on-prop-change",
+	"react-doctor/no-reset-all-state-on-prop-change"
+]);
+const MAX_GLOB_PATTERN_LENGTH_CHARS = 1024;
+const CONFIG_CACHE_TTL_MS = 300 * 1e3;
+const SOCKET_FREE_PURL_API_BASE = "https://firewall-api.socket.dev/purl";
+const SOCKET_PACKAGE_PAGE_BASE = "https://socket.dev/npm/package";
+const SOCKET_FREE_USER_AGENT = "react-doctor-supply-chain";
+const FILE_LINT_CACHE_FILENAME = "file-lint-cache.json";
+const FILE_LINT_CACHE_MAX_FILE_COUNT = 5e4;
+const SIDECAR_LINT_CACHE_FILENAME = "sidecar-lint-cache.json";
+const SUPPLY_CHAIN_PLUGIN = "socket";
+const SUPPLY_CHAIN_RULE = "low-supply-chain-score";
+const SUPPLY_CHAIN_CATEGORY = "Security";
+const SUPPLY_CHAIN_OVERLAP_TIMEOUT_MS = 9e4;
+const SUPPLY_CHAIN_CACHE_TTL_MS = 864e5;
+const SUPPLY_CHAIN_CACHE_SUBDIR = "supply-chain";
+const SUPPLY_CHAIN_IGNORED_PACKAGES = new Set(["next"]);
+const JSX_DUPLICATION_SOURCE_FILE_PATTERN = /\.[cm]?(?:jsx?|tsx)$/;
+const MAINTAINABILITY_SOURCE_FILE_PATTERN = /\.[cm]?[jt]sx?$/;
+const MAINTAINABILITY_PLUGIN = "react-doctor";
+const MAINTAINABILITY_DUPLICATE_JSX_RULE = "duplicate-jsx-subtree";
+const MAINTAINABILITY_CATEGORY = "Maintainability";
+//#endregion
+//#region ../core/dist/react-compiler-detection-worker-protocol-Dp5LlrE8.js
+const isReactCompilerDetectionReply = (value) => typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" && "hasReactCompiler" in value && (typeof value.hasReactCompiler === "boolean" || value.hasReactCompiler === null);
+//#endregion
+//#region ../core/dist/react-compiler-detection-client-STyNa3cf.js
+const pendingOutputsByRequestKey = /* @__PURE__ */ new Map();
+const toRequestKey = (request) => [
+	request.directory,
+	String(request.maxBufferBytes),
+	...request.args
+].join("\0");
+const runGitCommand = (request, signal) => new Promise((resolve) => {
+	execFile("git", [...request.args], {
+		cwd: request.directory,
+		encoding: "utf-8",
+		killSignal: "SIGKILL",
+		maxBuffer: request.maxBufferBytes,
+		signal
+	}, (error, stdout) => resolve(error ? null : stdout));
+});
+const prefetchGitCommand = (request) => {
+	const requestKey = toRequestKey(request);
+	if (pendingOutputsByRequestKey.has(requestKey)) return;
+	pendingOutputsByRequestKey.set(requestKey, runGitCommand(request));
+};
+const takePrefetchedGitCommand = (request) => {
+	const requestKey = toRequestKey(request);
+	const pendingOutput = pendingOutputsByRequestKey.get(requestKey) ?? null;
+	if (pendingOutput !== null) pendingOutputsByRequestKey.delete(requestKey);
+	return pendingOutput;
+};
+/** The prefetched output when the identical command was started early, otherwise a fresh run. */
+const resolveGitCommand = (request, signal) => takePrefetchedGitCommand(request) ?? runGitCommand(request, signal);
+const discardPrefetchedGitCommands = () => {
+	pendingOutputsByRequestKey.clear();
+};
+const buildGitSourceListingRequest = (directory) => ({
+	directory,
+	args: GIT_SOURCE_LISTING_ARGUMENTS,
+	maxBufferBytes: GIT_LS_FILES_MAX_BUFFER_BYTES
+});
+const CGROUP_V2_MEMORY_MAX_PATH = "/sys/fs/cgroup/memory.max";
+const CGROUP_V1_MEMORY_LIMIT_PATH = "/sys/fs/cgroup/memory/memory.limit_in_bytes";
+const CGROUP_UNLIMITED_SENTINEL_BYTES = Number.MAX_SAFE_INTEGER;
+/**
+* Parses one raw cgroup memory-limit file value into a positive byte count, or
+* `undefined` when it represents "no limit" (the v2 `"max"` literal, an empty
+* read, a non-positive / non-finite value, or v1's near-2^63 unlimited
+* sentinel). Pure and exported so the classification is unit-testable without
+* touching the filesystem.
+*/
+const parseCgroupMemoryLimitBytes = (raw) => {
+	if (raw === void 0) return void 0;
+	const trimmed = raw.trim();
+	if (trimmed === "" || trimmed === "max") return void 0;
+	const parsed = Number(trimmed);
+	if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= CGROUP_UNLIMITED_SENTINEL_BYTES) return;
+	return parsed;
+};
+const CGROUP_MEMORY_LIMIT_PATHS = [CGROUP_V2_MEMORY_MAX_PATH, CGROUP_V1_MEMORY_LIMIT_PATH];
+/**
+* Reads this process's cgroup memory limit in bytes from the first candidate
+* path that yields a real limit, or `undefined` when none does — no cgroup, no
+* limit, or the files are unreadable (e.g. macOS / Windows dev machines).
+* `os.totalmem()` reports the HOST total and ignores cgroup memory limits, so a
+* memory-constrained container over-reports total memory; `resolveAutoScan-
+* Concurrency` takes `min(totalmem, this)` to honor the limit.
+*
+* The cgroup v2 read is the mount-root `memory.max`, which IS the container's
+* limit under the standard cgroup-namespace setup CI runners use (the
+* container's own cgroup is the root of its namespaced view). A process in a
+* non-namespaced nested/delegated cgroup whose root reads `"max"` is not
+* detected here and falls back to the host total; the EAGAIN/ENOMEM serial
+* replay in `spawnLintBatches` remains the runtime backstop for that case.
+*
+* `candidatePaths` is injectable so tests exercise the v2-wins-over-v1
+* precedence, the skip-unreadable fallback, and the all-missing case without a
+* real `/sys/fs/cgroup`.
+*/
+const readCgroupMemoryLimitBytes = (candidatePaths = CGROUP_MEMORY_LIMIT_PATHS) => {
+	for (const limitPath of candidatePaths) {
+		let raw;
+		try {
+			raw = fs.readFileSync(limitPath, "utf8");
+		} catch {
+			continue;
+		}
+		const limitBytes = parseCgroupMemoryLimitBytes(raw);
+		if (limitBytes !== void 0) return limitBytes;
+	}
+};
+const readSystemConcurrencyFacts = () => ({
+	availableCores: os.availableParallelism(),
+	totalMemoryBytes: os.totalmem(),
+	cgroupMemoryLimitBytes: readCgroupMemoryLimitBytes()
+});
+/**
+* Clamps a requested lint worker count to `[MIN_SCAN_CONCURRENCY,
+* HARD_MAX_SCAN_CONCURRENCY]` as a finite integer. This is the explicit-pin and
+* spawn-boundary clamp — the memory-and-core-budgeted auto count comes from
+* `resolveAutoScanConcurrency`. Out-of-range or non-finite requests degrade to
+* `MIN_SCAN_CONCURRENCY` rather than oversubscribing or running zero workers.
+*/
+const resolveScanConcurrency = (requested) => {
+	if (!Number.isFinite(requested) || requested < 1) return 1;
+	return Math.min(Math.floor(requested), 32);
+};
+/**
+* Auto lint-worker count: the smaller of the (cgroup-CPU-aware) core count and
+* the number of `PER_WORKER_MEM_BUDGET_BYTES` workers that fit in available
+* memory, and the measured automatic parallel-efficiency ceiling, then clamped
+* to `[MIN, HARD_MAX]` by `resolveScanConcurrency`.
+*
+* `os.availableParallelism()` already respects cgroup CPU quotas, so the core
+* term needs no help. Available memory is `os.totalmem()` floored by the cgroup
+* memory limit — `os.freemem()` is deliberately NOT used: it excludes
+* reclaimable page cache and reads near-zero on macOS / cache-heavy Linux, which
+* would collapse the auto path to a single worker. `os.totalmem()` reports the
+* host total even inside a container, so the cgroup limit (read directly,
+* because Node doesn't fold it into `totalmem()`) is the real ceiling there.
+*
+* `facts` is injectable so tests exercise core-bound, memory-bound, cgroup-
+* limited, and ceiling cases without mocking `os` or the filesystem.
+*/
+const resolveAutoScanConcurrency = (facts = readSystemConcurrencyFacts()) => {
+	const availableMemoryBytes = Math.min(facts.totalMemoryBytes, facts.cgroupMemoryLimitBytes ?? Number.POSITIVE_INFINITY);
+	const memoryBoundedWorkers = Math.floor(availableMemoryBytes / PER_WORKER_MEM_BUDGET_BYTES);
+	return resolveScanConcurrency(Math.min(facts.availableCores, memoryBoundedWorkers, 10));
+};
+const resolveConfiguredScanConcurrency = () => {
+	const raw = process.env["REACT_DOCTOR_PARALLEL"];
+	if (raw === void 0) return resolveAutoScanConcurrency();
+	const normalized = raw.trim().toLowerCase();
+	if (normalized === "0" || normalized === "false" || normalized === "off") return 1;
+	const parsed = Number.parseInt(normalized, 10);
+	if (Number.isInteger(parsed) && parsed > 0) return resolveScanConcurrency(parsed);
+	return resolveAutoScanConcurrency();
+};
+const buildOxlintChildEnv = (sourceEnv) => {
+	const childEnv = {};
+	for (const [name, value] of Object.entries(sourceEnv)) {
+		if (name === "NODE_OPTIONS" || name === "NODE_DEBUG") continue;
+		if (name.startsWith("npm_config_")) continue;
+		childEnv[name] = value;
+	}
+	const isCompileCacheDisabled = Boolean(sourceEnv.NODE_DISABLE_COMPILE_CACHE);
+	const isCompileCacheAlreadySet = childEnv.NODE_COMPILE_CACHE !== void 0;
+	if (!isCompileCacheDisabled && !isCompileCacheAlreadySet) childEnv.NODE_COMPILE_CACHE = path$1.join(os.tmpdir(), NODE_COMPILE_CACHE_DIR_NAME);
+	return childEnv;
+};
+const setStreamRef = (stream, shouldRef) => {
+	if (!(stream instanceof net.Socket)) return;
+	if (shouldRef) stream.ref();
+	else stream.unref();
+};
+const setChildProcessRef = (child, shouldRef) => {
+	if (shouldRef) {
+		child.ref();
+		if (typeof child.channel?.ref === "function") child.channel.ref();
+	} else {
+		child.unref();
+		if (typeof child.channel?.unref === "function") child.channel.unref();
+	}
+	setStreamRef(child.stdout, shouldRef);
+	setStreamRef(child.stderr, shouldRef);
+};
+const NODE_VERSION_PATTERN = /^v(\d+)\./;
+const supportsTieringFlags = (childNodeVersion) => {
+	const match = NODE_VERSION_PATTERN.exec(childNodeVersion);
+	return match !== null && Number(match[1]) >= 22;
+};
+const buildOxlintWorkerNodeArguments = ({ childNodeVersion, nativeThreadCount }) => [`--max-old-space-size=${nativeThreadCount * OXLINT_WORKER_OLD_SPACE_MB_PER_NATIVE_THREAD}`, ...supportsTieringFlags(childNodeVersion) ? [`--invocation-count-for-turbofan=${OXLINT_WORKER_TURBOFAN_INVOCATION_COUNT}`] : []];
+const lowerChildProcessPriority = (processId) => {
+	if (processId === void 0) return;
+	try {
+		os$1.setPriority(processId, os$1.constants.priority.PRIORITY_BELOW_NORMAL);
+	} catch {}
+};
+const resolveOxlintThreadCount = (workerCount, availableCores = os.availableParallelism()) => Math.max(1, Math.floor(availableCores / workerCount));
+const fingerprintCacheByFilePath = /* @__PURE__ */ new Map();
+const fingerprintFileContents = (filePath, fingerprintLength) => {
+	const fileStats = fs$1.statSync(filePath, { bigint: true });
+	const cachedFingerprint = fingerprintCacheByFilePath.get(filePath);
+	if (cachedFingerprint?.modifiedTimeNanoseconds === fileStats.mtimeNs && cachedFingerprint.sizeBytes === fileStats.size) return cachedFingerprint.fingerprint;
+	const fingerprint = crypto.createHash("sha256").update(fs$1.readFileSync(filePath)).digest("hex").slice(0, fingerprintLength);
+	fingerprintCacheByFilePath.set(filePath, {
+		fingerprint,
+		modifiedTimeNanoseconds: fileStats.mtimeNs,
+		sizeBytes: fileStats.size
+	});
+	return fingerprint;
+};
+const bundledRequire = createRequire(import.meta.url);
+const childNodeVersionByBinaryPath = /* @__PURE__ */ new Map();
+const resolveChildNodeVersion = (nodeBinaryPath) => {
+	if (nodeBinaryPath === process.execPath) return process.version;
+	const cachedVersion = childNodeVersionByBinaryPath.get(nodeBinaryPath);
+	if (cachedVersion !== void 0) return cachedVersion;
+	let version;
+	try {
+		version = execFileSync(nodeBinaryPath, ["--version"], {
+			encoding: "utf8",
+			timeout: NODE_VERSION_PROBE_TIMEOUT_MS
+		}).trim();
+	} catch {
+		version = `unknown:${nodeBinaryPath}`;
+	}
+	childNodeVersionByBinaryPath.set(nodeBinaryPath, version);
+	return version;
+};
+const TOOLCHAIN_PACKAGE_SPECIFIERS = [
+	"oxlint/package.json",
+	"oxlint-plugin-react-doctor/package.json",
+	"eslint-plugin-react-hooks/package.json"
+];
+const resolvePluginFingerprint = () => {
+	try {
+		return fingerprintFileContents(bundledRequire.resolve("oxlint-plugin-react-doctor"), 16);
+	} catch {
+		return "unresolved";
+	}
+};
+const resolveOxlintToolchainVersions = (nodeBinaryPath = process.execPath) => {
+	const versions = [`node=${resolveChildNodeVersion(nodeBinaryPath)}`];
+	for (const specifier of TOOLCHAIN_PACKAGE_SPECIFIERS) try {
+		const packageJson = bundledRequire(specifier);
+		const version = typeof packageJson.version === "string" ? packageJson.version : "unknown";
+		versions.push(`${specifier}=${version}`);
+	} catch {
+		versions.push(`${specifier}=missing`);
+	}
+	versions.push(`oxlint-plugin-react-doctor#fingerprint=${resolvePluginFingerprint()}`);
+	return versions;
+};
+const prespawnedBySpecKey = /* @__PURE__ */ new Map();
+const buildOxlintWorkerSpawnSpec = (input) => ({
+	nodeBinaryPath: input.nodeBinaryPath,
+	args: [
+		...buildOxlintWorkerNodeArguments({
+			childNodeVersion: resolveChildNodeVersion(input.nodeBinaryPath),
+			nativeThreadCount: resolveOxlintThreadCount(input.maxWorkers)
+		}),
+		input.workerScriptPath,
+		input.oxlintPackageDirectory,
+		...input.pluginPath === null ? [] : [input.pluginPath]
+	],
+	environment: input.environment
+});
+const toSpecKey = (spec) => JSON.stringify([
+	spec.nodeBinaryPath,
+	spec.args,
+	Object.entries(spec.environment).sort(([firstName], [secondName]) => firstName.localeCompare(secondName))
+]);
+const spawnOxlintWorkerProcess = (spec) => {
+	const child = spawn(spec.nodeBinaryPath, [...spec.args], {
+		env: spec.environment,
+		stdio: [
+			"ignore",
+			"pipe",
+			"pipe",
+			"ipc"
+		],
+		windowsHide: true
+	});
+	lowerChildProcessPriority(child.pid);
+	return child;
+};
+const prespawnOne = (spec) => {
+	const child = spawnOxlintWorkerProcess(spec);
+	const onMessage = (message) => {
+		if (record.bootMessage === null) record.bootMessage = message;
+	};
+	const onError = (error) => {
+		if (record.spawnError === null) record.spawnError = error;
+	};
+	const onClose = (code, signal) => {
+		record.exit = {
+			code,
+			signal
+		};
+	};
+	const record = {
+		child,
+		bootMessage: null,
+		spawnError: null,
+		exit: null,
+		detach: () => {
+			child.off("message", onMessage);
+			child.off("error", onError);
+			child.off("close", onClose);
+		}
+	};
+	child.on("message", onMessage);
+	child.on("error", onError);
+	child.on("close", onClose);
+	setChildProcessRef(child, false);
+	return record;
+};
+const prespawnOxlintWorkers = (spec, count) => {
+	const specKey = toSpecKey(spec);
+	const records = prespawnedBySpecKey.get(specKey) ?? [];
+	while (records.length < count) records.push(prespawnOne(spec));
+	prespawnedBySpecKey.set(specKey, records);
+};
+const killUnadoptedOxlintWorkers = () => {
+	for (const records of prespawnedBySpecKey.values()) for (const record of records) {
+		record.detach();
+		record.child.kill("SIGKILL");
+	}
+	prespawnedBySpecKey.clear();
+};
+const takePrespawnedOxlintWorker = (spec) => {
+	const record = prespawnedBySpecKey.get(toSpecKey(spec))?.shift();
+	if (record === void 0) return null;
+	record.detach();
+	setChildProcessRef(record.child, true);
+	return record;
+};
+const esmRequire = createRequire(import.meta.url);
+const resolveOxlintPackageDirectory = () => {
+	const oxlintMainPath = esmRequire.resolve("oxlint");
+	return path$1.resolve(path$1.dirname(oxlintMainPath), "..");
+};
+const resolveOxlintBinary = () => path$1.join(resolveOxlintPackageDirectory(), "bin", "oxlint");
+const resolvePluginPath = () => esmRequire.resolve("oxlint-plugin-react-doctor");
+const resolveTsConfigRelativePath = (rootDirectory) => {
+	for (const filename of TSCONFIG_FILENAMES) if (fs$1.existsSync(path$1.join(rootDirectory, filename))) return `./${filename}`;
+	return null;
+};
+const LEGACY_SPAWN_ENV_NAMES = [
+	"REACT_DOCTOR_CPU_PROFILE_DIR",
+	"REACT_DOCTOR_HEAP_PROFILE_DIR",
+	"REACT_DOCTOR_OXLINT_TIMINGS_DIR",
+	"REACT_DOCTOR_RULE_TIMINGS_DIR",
+	"REACT_DOCTOR_DISABLE_OXLINT_WORKER_POOL"
+];
+const OXLINT_INTERNAL_MODULES = [
+	"cli.js",
+	"bindings.js",
+	"plugins.js",
+	"workspace.js"
+];
+const resolveOptionalPluginPath = () => {
+	try {
+		return resolvePluginPath();
+	} catch {
+		return null;
+	}
+};
+const isLegacySpawnForced = (environment) => LEGACY_SPAWN_ENV_NAMES.some((name) => Boolean(environment[name]));
+const resolveOxlintWorkerRuntime = (environment = process.env) => {
+	if (isLegacySpawnForced(environment)) return null;
+	const workerScriptPath = path$1.join(path$1.dirname(fileURLToPath(import.meta.url)), "oxlint-worker.js");
+	if (!fs$1.existsSync(workerScriptPath)) return null;
+	const oxlintPackageDirectory = resolveOxlintPackageDirectory();
+	if (!OXLINT_INTERNAL_MODULES.every((fileName) => fs$1.existsSync(path$1.join(oxlintPackageDirectory, "dist", fileName)))) return null;
+	return {
+		workerScriptPath,
+		oxlintPackageDirectory,
+		pluginPath: resolveOptionalPluginPath()
+	};
+};
+const projectCacheSubdir = (projectDirectory) => crypto.createHash("sha256").update(projectDirectory).digest("hex").slice(0, 16);
+const resolveReactDoctorCacheDir = (projectDirectory) => {
+	const cacheDirOverride = process.env["REACT_DOCTOR_CACHE_DIR"]?.trim();
+	if (cacheDirOverride) return path$1.join(cacheDirOverride, projectCacheSubdir(projectDirectory));
+	const nodeModulesDirectory = path$1.join(projectDirectory, "node_modules");
+	if (fs$1.existsSync(nodeModulesDirectory)) return path$1.join(nodeModulesDirectory, ".cache", "react-doctor");
+	return path$1.join(os.tmpdir(), `react-doctor-cache-${resolveUserCacheScope()}`, projectCacheSubdir(projectDirectory));
+};
+const resolveUserCacheScope = () => {
+	try {
+		return String(process.getuid?.() ?? os.userInfo().username);
+	} catch {
+		return "shared";
+	}
+};
+const DEFAULT_WORKER_SCRIPT_PATH = path$1.join(path$1.dirname(fileURLToPath(import.meta.url)), "react-compiler-detection-worker.js");
+const pendingDetectionsByDirectory = /* @__PURE__ */ new Map();
+let sharedWorker = null;
+let nextRequestId = 0;
+const retireWorker = (shared) => {
+	if (shared.idleTimer !== null) clearTimeout(shared.idleTimer);
+	shared.idleTimer = null;
+	if (sharedWorker === shared) sharedWorker = null;
+	if (shared.isDead) return;
+	shared.isDead = true;
+	for (const resolve of shared.resolveById.values()) resolve(null);
+	shared.resolveById.clear();
+	shared.worker.terminate();
+};
+const settleIdleState = (shared) => {
+	if (shared.resolveById.size > 0) {
+		if (shared.idleTimer !== null) clearTimeout(shared.idleTimer);
+		shared.idleTimer = null;
+		shared.worker.ref();
+		return;
+	}
+	shared.worker.unref();
+	shared.idleTimer ??= setTimeout(() => retireWorker(shared), REACT_COMPILER_DETECTION_WORKER_IDLE_TIMEOUT_MS);
+	shared.idleTimer.unref();
+};
+const acquireSharedWorker = (scriptPath) => {
+	if (sharedWorker !== null && !sharedWorker.isDead) return sharedWorker;
+	let worker;
+	try {
+		worker = new Worker(scriptPath);
+	} catch {
+		return null;
+	}
+	const shared = {
+		worker,
+		resolveById: /* @__PURE__ */ new Map(),
+		idleTimer: null,
+		isDead: false
+	};
+	worker.on("message", (message) => {
+		if (!isReactCompilerDetectionReply(message)) return;
+		const resolve = shared.resolveById.get(message.id);
+		if (resolve === void 0) return;
+		shared.resolveById.delete(message.id);
+		resolve(message.hasReactCompiler);
+		settleIdleState(shared);
+	});
+	worker.once("error", () => retireWorker(shared));
+	worker.once("exit", () => retireWorker(shared));
+	sharedWorker = shared;
+	return shared;
+};
+const detectInWorker = (shared, directory) => new Promise((resolve) => {
+	const request = {
+		id: nextRequestId++,
+		directory
+	};
+	shared.resolveById.set(request.id, resolve);
+	settleIdleState(shared);
+	shared.worker.postMessage(request);
+});
+const warmReactCompilerDetection = (directory, scriptPath = DEFAULT_WORKER_SCRIPT_PATH) => {
+	if (pendingDetectionsByDirectory.has(directory) || !fs$1.existsSync(scriptPath)) return;
+	const shared = acquireSharedWorker(scriptPath);
+	if (shared === null) return;
+	pendingDetectionsByDirectory.set(directory, detectInWorker(shared, directory));
+};
+const takeReactCompilerDetection = (directory) => {
+	const pending = pendingDetectionsByDirectory.get(directory) ?? null;
+	if (pending !== null) pendingDetectionsByDirectory.delete(directory);
+	return pending;
+};
+//#endregion
+//#region src/cli/utils/constants.ts
+const REACT_DOCTOR_CONFIG_PROJECT_NAME = "react-doctor";
+const STAGED_FILES_TEMP_DIR_PREFIX = "react-doctor-staged-";
+const STAGED_SNAPSHOT_ADDITIONAL_CONFIG_FILENAMES = [
+	".babelrc",
+	".babelrc.json",
+	".eslintignore",
+	".eslintrc.json",
+	".oxlintignore",
+	"app.config.cjs",
+	"app.config.js",
+	"app.config.json",
+	"app.config.mjs",
+	"app.config.ts",
+	"app.json",
+	"babel.config.cjs",
+	"babel.config.js",
+	"babel.config.json",
+	"babel.config.mjs",
+	"eslint.config.cjs",
+	"eslint.config.cts",
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.mts",
+	"eslint.config.ts",
+	"next.config.cjs",
+	"next.config.js",
+	"next.config.mjs",
+	"next.config.ts",
+	"oxlint.config.json",
+	"react-doctor.config.json",
+	"vite.config.cjs",
+	"vite.config.cts",
+	"vite.config.js",
+	"vite.config.mjs",
+	"vite.config.mts",
+	"vite.config.ts",
+	"vitest.config.js",
+	"vitest.config.ts"
+];
+const BASELINE_FILES_TEMP_DIR_PREFIX = "react-doctor-baseline-";
+const SCAN_RESULT_CACHE_FILENAME = "scan-cache.json";
+const SCAN_RESULT_CACHE_MAX_HASHED_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const RUN_GIT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+const HEAD_SHA_GIT_ARGUMENTS = ["rev-parse", "HEAD"];
+const REPOSITORY_ROOT_GIT_ARGUMENTS = ["rev-parse", "--show-toplevel"];
+const TRACKED_FILE_FLAGS_GIT_ARGUMENTS = ["ls-files", "-v"];
+const WORKTREE_STATUS_GIT_ARGUMENTS = [
+	"status",
+	"--porcelain=v1",
+	"-z",
+	"--untracked-files=all"
+];
+const SCAN_RESULT_CACHE_GIT_ARGUMENTS = [
+	TRACKED_FILE_FLAGS_GIT_ARGUMENTS,
+	REPOSITORY_ROOT_GIT_ARGUMENTS,
+	WORKTREE_STATUS_GIT_ARGUMENTS,
+	HEAD_SHA_GIT_ARGUMENTS
+];
+const CACHE_DISABLED_VALUES = new Set(["1", "true"]);
+const SCAN_PREAMBLE_SKIP_FLAGS = new Set([
+	"-h",
+	"--help",
+	"-v",
+	"-V",
+	"--version",
+	"--staged"
+]);
+const GH_DEFAULT_BRANCH_PROBE_TIMEOUT_MS = 5e3;
+const TUI_REPORT_COMPACT_MAX_ROWS = 23;
+const TUI_REPORT_DETAIL_WIDTH_FRACTION = .6;
+const CI_TRUST_COMPANIES = "PayPal, Rippling, and Alibaba";
+const MINIMUM_VTE_VERSION_FOR_HYPERLINKS = 5e3;
+const INTERNAL_ERROR_JSON_FALLBACK = "{\"schemaVersion\":3,\"version\":\"unknown\",\"ok\":false,\"directory\":\"\",\"mode\":\"full\",\"diff\":null,\"projects\":[],\"diagnostics\":[],\"summary\":{\"errorCount\":0,\"warningCount\":0,\"affectedFileCount\":0,\"totalDiagnosticCount\":0,\"score\":null,\"scoreLabel\":null},\"elapsedMilliseconds\":0,\"error\":{\"message\":\"Internal error\",\"name\":\"Error\",\"chain\":[]}}\n";
+const SENTRY_DSN = "https://f253d570240a59b8dbd77b7a548ef133@o4510226365743104.ingest.us.sentry.io/4511487817809920";
+const AXIOM_INGEST_TOKEN = "xaat-31b59107-855d-4917-8fab-6dc29fb459ce";
+const NANOSECONDS_PER_MILLISECOND = 1000000n;
+const AXIOM_TRACES_DATASET = "react-doctor";
+const AXIOM_METRICS_DATASET = "react-doctor-metrics";
+const SENTRY_RELEASE_PREFIX = "react-doctor";
+const SENTRY_FLUSH_TIMEOUT_MS = 2e3;
+const METRIC_DISTRIBUTION_BOUNDARIES = [
+	0,
+	1,
+	2,
+	5,
+	10,
+	25,
+	50,
+	100,
+	250,
+	500,
+	1e3,
+	2500,
+	5e3,
+	1e4,
+	3e4,
+	6e4,
+	3e5,
+	6e5
+];
+const METRIC = {
+	cliInvoked: "cli.invoked",
+	cliError: "cli.error",
+	cliEnvironmentError: "cli.env_error",
+	stagedSnapshotDivergence: "staged.snapshot_divergence",
+	stagedPerProject: "staged.per_project",
+	projectDetected: "project.detected",
+	projectPathSelected: "project.path_selected",
+	projectConfigSelected: "project.config_selected",
+	scanCompleted: "scan.completed",
+	scanWarningExitCodeConfigured: "scan.warning_exit_code.configured",
+	scanDuration: "scan.duration",
+	scanFeedbackDelay: "scan.feedback_delay",
+	scanPhaseDuration: "scan.phase_duration",
+	scanFiles: "scan.files",
+	scanScore: "scan.score",
+	scanScoreRetry: "scan.score_retry",
+	scanClean: "scan.clean",
+	scanCheckSkipped: "scan.check_skipped",
+	scanProjectSkipped: "scan.project_skipped",
+	scanWorkspaceMaintainabilityShared: "scan.workspace_maintainability_shared",
+	scanNoReactDetected: "scan.no_react_detected",
+	baselineDegraded: "baseline.degraded",
+	ruleFired: "rule.fired",
+	ruleDisabled: "rule.disabled",
+	ruleSuppressed: "rule.suppressed",
+	lintFailed: "lint.failed",
+	maintainabilityFailed: "maintainability.failed",
+	scoreUnavailable: "score.unavailable",
+	oxlintWorkers: "oxlint.workers",
+	agentHandoff: "agent.handoff",
+	agentInstallHintShown: "agent.install_hint_shown",
+	installCompleted: "install.completed",
+	installAgent: "install.agent",
+	installGitHook: "install.git_hook",
+	installWorkflow: "install.workflow",
+	installAgentHooks: "install.agent_hooks",
+	installDependency: "install.dependency",
+	ciScaffolded: "ci.scaffolded",
+	ciUpgraded: "ci.upgraded",
+	ciConfigured: "ci.configured",
+	rulesChanged: "rules.changed",
+	rulesQueried: "rules.queried",
+	runtimeScanUrlPromptShown: "runtime_scan.url_prompt_shown",
+	tuiCompactReportShown: "tui.compact_report_shown",
+	tuiFindingNavigated: "tui.finding_navigated",
+	tuiIssueStreamShown: "tui.issue_stream_shown",
+	tuiProjectPathContextShown: "tui.project_path_context_shown",
+	tuiProjectSelectShown: "tui.project_select_shown",
+	tuiCiRecommendationShown: "tui.ci_recommendation_shown",
+	tuiReportActionSelected: "tui.report_action_selected",
+	tuiCancelled: "tui.cancelled",
+	tuiScanInlineShown: "tui.scan_inline_shown",
+	tuiStackedReportCapped: "tui.stacked_report_capped",
+	aiTrainingWarningShown: "ai.training.warning_shown",
+	jsonOutUsed: "json.out_used"
+};
+//#endregion
+export { warmReactCompilerDetection as $, OXLINT_WORKER_JOB_END_MARKER as $t, buildGitSourceListingRequest as A, TARGET_BLANK_BROWSER_SUPPORT as An, GITHUB_VIEWER_PERMISSION_TIMEOUT_MS as At, resolveGitCommand as B, MAINTAINABILITY_DUPLICATE_JSX_RULE as Bt, SENTRY_RELEASE_PREFIX as C, SUPPLY_CHAIN_CACHE_TTL_MS as Cn, ES_TARGET_YEAR_BY_NAME as Ct, TUI_REPORT_COMPACT_MAX_ROWS as D, SUPPLY_CHAIN_PLUGIN as Dn, GENERATED_BUNDLE_FILE_PATTERN as Dt, TRACKED_FILE_FLAGS_GIT_ARGUMENTS as E, SUPPLY_CHAIN_OVERLAP_TIMEOUT_MS as En, FILE_LINT_CACHE_MAX_FILE_COUNT as Et, lowerChildProcessPriority as F, VERCEL_NEXTJS_SECURITY_RELEASE_URL as Fn, HTML_FILE_PATTERN as Ft, resolvePluginPath as G, MINIFIED_SNIFF_BYTES as Gt, resolveOxlintThreadCount as H, MAINTAINABILITY_SOURCE_FILE_PATTERN as Ht, prefetchGitCommand as I, getCategoryImpact as In, IGNORED_DIRECTORIES as It, resolveTsConfigRelativePath as J, OXLINT_NODE_REQUIREMENT as Jt, resolveReactDoctorCacheDir as K, OCCURRENCE_MATCHED_CATEGORIES as Kt, prespawnOxlintWorkers as L, JSX_DUPLICATION_SOURCE_FILE_PATTERN as Lt, buildOxlintWorkerSpawnSpec as M, TELEMETRY_SHUTDOWN_TIMEOUT_MS as Mn, GIT_LS_FILES_MAX_BUFFER_BYTES as Mt, discardPrefetchedGitCommands as N, TSCONFIG_FILENAMES as Nn, GIT_SHOW_MAX_BUFFER_BYTES as Nt, TUI_REPORT_DETAIL_WIDTH_FRACTION as O, SUPPLY_CHAIN_RULE as On, GENERATED_SOURCE_DIRECTORY_PATTERN as Ot, killUnadoptedOxlintWorkers as P, TYPESCRIPT_DECLARATION_FILE_PATTERN as Pn, GIT_SOURCE_LISTING_ARGUMENTS as Pt, takeReactCompilerDetection as Q, OXLINT_SPLIT_TOTAL_BUDGET_MS as Qt, readSystemConcurrencyFacts as R, JSX_FILE_PATTERN as Rt, SENTRY_FLUSH_TIMEOUT_MS as S, SUPPLY_CHAIN_CACHE_SUBDIR as Sn, ENTERPRISE_CONTACT_URL as St, STAGED_SNAPSHOT_ADDITIONAL_CONFIG_FILENAMES as T, SUPPLY_CHAIN_IGNORED_PACKAGES as Tn, FILE_LINT_CACHE_FILENAME as Tt, resolveOxlintToolchainVersions as U, MAX_GLOB_PATTERN_LENGTH_CHARS as Ut, resolveOxlintBinary as V, MAINTAINABILITY_PLUGIN as Vt, resolveOxlintWorkerRuntime as W, MILLISECONDS_PER_SECOND as Wt, spawnOxlintWorkerProcess as X, OXLINT_OUTPUT_MAX_BYTES as Xt, setChildProcessRef as Y, OXLINT_OOM_RESCUE_BUDGET_MS as Yt, takePrespawnedOxlintWorker as Z, OXLINT_SPAWN_TIMEOUT_MS as Zt, SCAN_PREAMBLE_SKIP_FLAGS as _, SOURCE_FILE_PATTERN as _n, DIAGNOSTIC_CATEGORY_BUCKETS as _t, CACHE_DISABLED_VALUES as a, REACT_ROUTER_CAPABILITY_THRESHOLDS as an, AXIOM_METRICS_DATASET_HEADER as at, SCAN_RESULT_CACHE_MAX_HASHED_FILE_SIZE_BYTES as b, SPAWN_ARGS_MAX_LENGTH_CHARS_POSIX as bn, DOCS_URL as bt, HEAD_SHA_GIT_ARGUMENTS as c, ROOT_CAUSE_GROUPABLE_RULE_KEYS as cn, CANONICAL_DISCORD_URL as ct, METRIC_DISTRIBUTION_BOUNDARIES as d, SHARE_BASE_URL as dn, COMPILER_CLEANUP_BUCKET as dt, PROJECT_ANALYSIS_WORKER_MAX_OLD_SPACE_MB as en, ABORT_EXIT_CODES as et, MINIMUM_VTE_VERSION_FOR_HYPERLINKS as f, SIDECAR_LINT_CACHE_FILENAME as fn, COMPILER_CLEANUP_RULE_KEYS as ft, RUN_GIT_MAX_BUFFER_BYTES as g, SOCKET_PACKAGE_PAGE_BASE as gn, DEFAULT_BRANCH_CANDIDATES as gt, REPOSITORY_ROOT_GIT_ARGUMENTS as h, SOCKET_FREE_USER_AGENT as hn, CONFIG_SCHEMA_URL as ht, BASELINE_FILES_TEMP_DIR_PREFIX as i, REACT_BLOG_RSC_ADVISORY_URL as in, AXIOM_DEFAULT_DOMAIN as it, buildOxlintChildEnv as j, TELEMETRY_EXPORT_INTERVAL_MS as jn, GIT_CHECK_ATTR_MAX_BUFFER_BYTES as jt, WORKTREE_STATUS_GIT_ARGUMENTS as k, TAILWIND_POSTCSS7_COMPAT_ALIAS as kn, GITHUB_ACTIONS_SETUP_URL as kt, INTERNAL_ERROR_JSON_FALLBACK as l, SCANNED_DOT_DIRECTORIES as ln, CANONICAL_GITHUB_URL as lt, REACT_DOCTOR_CONFIG_PROJECT_NAME as m, SOCKET_FREE_PURL_API_BASE as mn, CONFIG_FINGERPRINT_FILENAMES as mt, AXIOM_METRICS_DATASET as n, PROJECT_ANALYSIS_WORKER_TIMEOUT_CEILING_MS as nn, APP_ONLY_RULE_KEYS as nt, CI_TRUST_COMPANIES as o, REACT_SERVER_DOM_PACKAGES as on, AXIOM_METRICS_PATH as ot, NANOSECONDS_PER_MILLISECOND as p, SKILL_NAME as pn, CONFIG_CACHE_TTL_MS as pt, resolveScanConcurrency as q, OXLINT_IGNORED_DECLARATION_DIAGNOSTIC_CODES as qt, AXIOM_TRACES_DATASET as r, PROJECT_ANALYSIS_WORKER_TIMEOUT_MS as rn, AXIOM_DATASET_HEADER as rt, GH_DEFAULT_BRANCH_PROBE_TIMEOUT_MS as s, RECOMMENDED_PNPM_MINIMUM_RELEASE_AGE_MINUTES as sn, AXIOM_TRACES_PATH as st, AXIOM_INGEST_TOKEN as t, PROJECT_ANALYSIS_WORKER_MEMORY_BUDGET_BYTES as tn, ADOPTABLE_LINT_CONFIG_FILENAMES as tt, METRIC as u, SCORE_API_URL as un, CI_URL as ut, SCAN_RESULT_CACHE_FILENAME as v, SPAWN_ARGS_MAX_LENGTH_CHARS as vn, DISABLE_DIRECTIVE_BACKUP_DIRECTORY_SEGMENTS as vt, STAGED_FILES_TEMP_DIR_PREFIX as w, SUPPLY_CHAIN_CATEGORY as wn, FETCH_TIMEOUT_MS as wt, SENTRY_DSN as x, STAGED_FILES_PROJECT_CONFIG_FILENAMES as xn, DUPLICATE_JSX_WORKER_IDLE_TIMEOUT_MS as xt, SCAN_RESULT_CACHE_GIT_ARGUMENTS as y, SPAWN_ARGS_MAX_LENGTH_CHARS_DARWIN as yn, DOCS_RULES_BASE_URL as yt, resolveConfiguredScanConcurrency as z, MAINTAINABILITY_CATEGORY as zt };
+
+//# sourceMappingURL=constants-_b1h6lxa.js.map
+//# debugId=a2444fd7-ba97-5c97-b408-a7a41e230745

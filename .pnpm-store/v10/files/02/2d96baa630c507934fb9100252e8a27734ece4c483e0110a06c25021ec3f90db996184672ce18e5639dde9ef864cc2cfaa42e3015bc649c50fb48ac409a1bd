@@ -1,0 +1,49 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="36ce6cf6-a9f7-5ed2-93dc-1453d7344a56")}catch(e){}}();
+import { u as METRIC } from "./constants-_b1h6lxa.js";
+import { Xt as resolveScanTarget, t as recordCount } from "./record-metric-AbxY4m3i.js";
+import { i as warnDeprecatedDiff } from "./resolve-scope-D27oa5iH.js";
+import { n as warnDeprecatedFailOn, r as runProjectMigrations, t as inspectAction } from "./inspect-BJleAXM5.js";
+import { a as validateModeFlags, r as validateFilePathSelectionFlags, y as resolveCliInspectOptions } from "./resolve-scan-exit-code-CKO-d5OH.js";
+import { n as shouldUseTui, r as resolveTuiEnvironment } from "./should-use-tui-ZZii9Kea.js";
+import path from "node:path";
+//#region src/cli/commands/scan.ts
+const runScanCommand = async (input) => {
+	if (input.flags.cache === false) process.env.REACT_DOCTOR_NO_CACHE = "1";
+	if (input.filePaths !== void 0) validateFilePathSelectionFlags(input.flags);
+	const tuiEnvironment = {
+		flags: input.flags,
+		...resolveTuiEnvironment()
+	};
+	if (input.filePaths !== void 0) {
+		await inspectAction(input.directory, input.flags, input.invocationCommand, input.filePaths);
+		return;
+	}
+	if (!shouldUseTui(tuiEnvironment)) {
+		await inspectAction(input.directory, input.flags, input.invocationCommand);
+		return;
+	}
+	await runProjectMigrations(path.resolve(input.directory));
+	const scanTarget = await resolveScanTarget(input.directory, { allowAmbiguous: true });
+	validateModeFlags(input.flags);
+	warnDeprecatedFailOn(input.flags, scanTarget.userConfig);
+	warnDeprecatedDiff(input.flags, scanTarget.userConfig);
+	recordCount(METRIC.cliInvoked, 1, { command: input.invocationCommand });
+	const { runScanApp } = await import("./run-scan-app-BS_zTwT4.js");
+	const { exitCode } = await runScanApp({
+		directory: input.directory,
+		scanTarget,
+		options: resolveCliInspectOptions(input.flags, null),
+		projectFlag: input.flags.project,
+		skipPrompts: input.flags.yes ?? false,
+		blocking: input.flags.blocking ?? input.flags.failOn,
+		flags: input.flags,
+		warningExitCode: input.flags.warningExitCode
+	});
+	if (exitCode !== 0) process.exitCode = exitCode;
+};
+//#endregion
+export { runScanCommand };
+
+//# sourceMappingURL=scan-CShLBeps.js.map
+//# debugId=36ce6cf6-a9f7-5ed2-93dc-1453d7344a56

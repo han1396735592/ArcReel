@@ -1,0 +1,2528 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="4a28dce7-6c9d-5098-9bbf-65f204021cc3")}catch(e){}}();
+import { D as TUI_REPORT_COMPACT_MAX_ROWS, In as getCategoryImpact, O as TUI_REPORT_DETAIL_WIDTH_FRACTION, _t as DIAGNOSTIC_CATEGORY_BUCKETS, kt as GITHUB_ACTIONS_SETUP_URL, o as CI_TRUST_COMPANIES, u as METRIC } from "./constants-_b1h6lxa.js";
+import { Ct as getChangedLineRanges, En as sync, Mn as succeed, Mt as highlighter, On as void_, Q as buildRuleDocsUrl, St as getBaselineDiffPlan, T as isCiEnvironment, Tt as getDiffInfo, U as Reporter, Ut as mapWithConcurrency, V as Progress, Xt as resolveScanTarget, kt as hasPublishedFixRecipe, n as recordDistribution, qt as remainingDeadlineBudgetMs, t as recordCount, tt as calculateScore, wn as runPromise, x as isGitHookEnvironment, zn as yieldToEventLoop } from "./record-metric-AbxY4m3i.js";
+import { t as toForwardSlashes } from "./path-format-By20mo8A.js";
+import { N as cliLogger, n as findNearestPackageDirectory } from "./install-doctor-script-BvrxLUFo.js";
+import { i as isReactDoctorWorkflowInstalled } from "./install-github-workflow-BABtyGBR.js";
+import { r as resolveScope, s as resolveBlockingLevel, t as finalizeScope } from "./resolve-scope-D27oa5iH.js";
+import { A as createInvocationInspect, B as hasIncompleteScoreAnalysis, C as detectLaunchableAgents, D as buildHandoffPayload, E as launchCliAgent, F as formatSkippedCheckLabel, G as hasLintHardFailure, H as buildNoScoreMessage, I as formatElapsedTime, J as formatFixRecipeLine, K as buildRulePriorityMap, L as printFooter, M as resolveMergeBaseRef, O as collectProjectSourceFiles, P as pluralize, R as printDiagnosticsDump, S as setUpGitHubActions, T as copyToClipboard, U as buildEmptyReportMessage, V as filterDiagnosticsByCategories, Y as formatLearnMoreLine, _ as retryMissingProjectScores, b as filterScansForSurface, c as partitionProjectScanOutcomes, d as buildCodeFrame, f as resolveProjectScan, h as resolveProjectSourceFilePaths, i as validateIncludeUntrackedScope, k as deduplicateProjectScans, l as discoverWorkspacePackages, m as resolveProjectDiffIncludePaths, n as formatSkippedProjectsMessage, o as resolveExcludedProjectDirectories, p as resolveProjectChangedLineRanges, q as buildSortedRuleGroups, s as projectManifestChanged, t as resolveScanExitCode, u as selectProjects, v as resolveWorkspaceDeadCodeOwner, w as CLI_AGENT_BINARIES, x as countUniqueScannedFiles, y as resolveCliInspectOptions, z as formatDiagnosticSite } from "./resolve-scan-exit-code-CKO-d5OH.js";
+import { a as recordGate, f as ONBOARDING_EVENT, n as openUrl, r as isGatePending } from "./report-workflow-result-DQ2CaExl.js";
+import { a as useExitOnCtrlC, c as Spinner, d as useInput, f as Transform, h as Box, i as import_react, l as useStdout, m as Text, n as registerMountedTuiRenderer, o as terminalSymbols, p as render, r as useStdoutDimensions, s as isPrintableInput, t as require_jsx_runtime, u as useApp } from "./jsx-runtime-mnxPtbiq.js";
+import path from "node:path";
+import { performance } from "node:perf_hooks";
+import isUnicodeSupported from "is-unicode-supported";
+import { getSkillAgentConfig } from "agent-install";
+//#region src/cli/utils/get-top-error-rule-keys.ts
+const getTopErrorRuleKeys = (diagnostics, limit, rulePriority) => new Set(buildSortedRuleGroups(diagnostics.filter((diagnostic) => diagnostic.severity === "error"), rulePriority).slice(0, limit).map(([ruleKey]) => ruleKey));
+//#endregion
+//#region src/cli/utils/compute-score-projection.ts
+const computeProjectedScore = async (topErrorSource, rescoreSource, currentScore) => {
+	const topErrorRuleKeys = getTopErrorRuleKeys(topErrorSource, 3, buildRulePriorityMap([currentScore]));
+	if (topErrorRuleKeys.size === 0) return null;
+	const potentialScore = await calculateScore(rescoreSource.filter((diagnostic) => !topErrorRuleKeys.has(`${diagnostic.plugin}/${diagnostic.rule}`)));
+	if (!potentialScore || potentialScore.score <= currentScore.score) return null;
+	return potentialScore.score;
+};
+//#endregion
+//#region src/cli/utils/is-share-opted-out.ts
+const isShareOptedOut = (scans, flagNoScore) => Boolean(flagNoScore) || scans.some((scan) => Boolean(scan.config?.noScore) || scan.config?.share === false);
+//#endregion
+//#region src/cli/utils/resolve-project-tui-scan-scope.ts
+const resolveProjectTuiScanScope = (input) => {
+	if (input.plan.scope === "full") return {};
+	if (input.plan.diffInfo === null) return null;
+	const changedSourceFiles = resolveProjectDiffIncludePaths(input.rootDirectory, input.projectDirectory, input.plan.diffInfo);
+	const baselineBaseFiles = input.plan.baselineDiffPlan === null ? null : resolveProjectSourceFilePaths(input.rootDirectory, input.projectDirectory, input.plan.baselineDiffPlan.baseFiles);
+	const baselineHeadFiles = input.plan.baselineDiffPlan === null ? null : resolveProjectSourceFilePaths(input.rootDirectory, input.projectDirectory, input.plan.baselineDiffPlan.headFiles);
+	const supplyChainManifestChanged = input.supplyChainEnabled && projectManifestChanged(input.rootDirectory, input.projectDirectory, input.plan.diffInfo);
+	const hasBaselineOnlyFiles = (baselineBaseFiles?.length ?? 0) > 0;
+	if (!supplyChainManifestChanged && changedSourceFiles.length === 0 && !hasBaselineOnlyFiles) return null;
+	const includePaths = [...changedSourceFiles];
+	if (includePaths.length === 0 && hasBaselineOnlyFiles) includePaths.push(...baselineBaseFiles ?? []);
+	if (supplyChainManifestChanged) includePaths.push("package.json");
+	return {
+		includePaths,
+		baseline: input.plan.baselineRef !== null && baselineBaseFiles !== null && baselineHeadFiles !== null ? {
+			ref: input.plan.baselineRef,
+			baseFiles: baselineBaseFiles,
+			headFiles: baselineHeadFiles
+		} : void 0,
+		contextual: input.plan.scope === "contextual",
+		changedLineRanges: (input.plan.scope === "lines" || input.plan.scope === "contextual") && input.plan.changedLineRanges !== null ? resolveProjectChangedLineRanges(input.rootDirectory, input.projectDirectory, input.plan.changedLineRanges) : void 0,
+		supplyChainManifestChanged
+	};
+};
+//#endregion
+//#region src/cli/utils/resolve-tui-scan-scope.ts
+const resolveTuiScanScope = async (input) => {
+	const requestedScope = resolveScope(input.flags, input.userConfig);
+	const includeUntracked = input.flags.includeUntracked ?? false;
+	validateIncludeUntrackedScope(includeUntracked, requestedScope.scope);
+	const diffInfo = requestedScope.scope !== void 0 && requestedScope.scope !== "full" ? await getDiffInfo(input.directory, requestedScope.base, includeUntracked) : null;
+	const scope = await finalizeScope({
+		requested: requestedScope,
+		diffInfo,
+		skipPrompts: true,
+		isQuiet: false
+	});
+	let comparisonBaseRef = null;
+	if (scope !== "full" && diffInfo !== null && !diffInfo.isCurrentChanges) if (diffInfo.baseSha !== void 0) comparisonBaseRef = await resolveMergeBaseRef(input.directory, diffInfo.baseSha);
+	else if (diffInfo.diffBaseRef !== void 0) comparisonBaseRef = diffInfo.diffBaseRef;
+	else comparisonBaseRef = await resolveMergeBaseRef(input.directory, diffInfo.baseBranch);
+	const baselineRef = scope === "changed" ? comparisonBaseRef : null;
+	const baselineDiffPlan = baselineRef === null ? null : await getBaselineDiffPlan(input.directory, baselineRef);
+	const linesBaseRef = diffInfo?.isCurrentChanges ? "HEAD" : comparisonBaseRef;
+	const changedLineRanges = (scope === "lines" || scope === "contextual") && diffInfo !== null && (diffInfo.isCurrentChanges || linesBaseRef !== null) ? await getChangedLineRanges({
+		directory: input.directory,
+		baseRef: linesBaseRef ?? void 0,
+		files: [...diffInfo.changedFiles],
+		includeUntracked,
+		includeDeletions: scope === "contextual"
+	}) : null;
+	if ((scope === "lines" || scope === "contextual") && changedLineRanges === null) {
+		cliLogger.warn("Could not determine changed lines (no base ref or git diff failed); reporting all issues in changed files.");
+		cliLogger.break();
+	}
+	return {
+		baselineDiffPlan,
+		baselineIntended: scope === "changed" && diffInfo !== null && !diffInfo.isCurrentChanges,
+		baselineRef,
+		changedLineRanges,
+		diffInfo,
+		scope
+	};
+};
+//#endregion
+//#region src/cli/utils/select-report-diagnostics.ts
+const selectReportDiagnostics = (input) => {
+	const surfaceDiagnostics = filterScansForSurface([input.scan], input.surface ?? "cli");
+	return {
+		diagnostics: filterDiagnosticsByCategories(surfaceDiagnostics, new Set(input.categoryFilters)),
+		demotedDiagnosticCount: input.scan.result.diagnostics.length - surfaceDiagnostics.length
+	};
+};
+//#endregion
+//#region src/cli/utils/clamp-number.ts
+const clampNumber = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+//#endregion
+//#region src/cli/utils/resolve-visible-start.ts
+const resolveVisibleStart = ({ itemCount, offset, selectedIndex, viewportHeight }) => {
+	if (viewportHeight <= 0) return 0;
+	const boundedOffset = clampNumber(offset, 0, Math.max(0, itemCount - viewportHeight));
+	if (selectedIndex < boundedOffset) return selectedIndex;
+	if (selectedIndex >= boundedOffset + viewportHeight) return Math.max(0, selectedIndex - viewportHeight + 1);
+	return boundedOffset;
+};
+//#endregion
+//#region src/cli/ink/lib/fuzzy-match.ts
+const fuzzyMatch = (query, target) => {
+	if (query.length === 0) return {
+		score: 0,
+		matchedIndices: []
+	};
+	const lowerQuery = query.toLowerCase();
+	const lowerTarget = target.toLowerCase();
+	const matchedIndices = [];
+	let score = 0;
+	let queryIndex = 0;
+	let previousMatchIndex = Number.NEGATIVE_INFINITY;
+	for (let targetIndex = 0; targetIndex < lowerTarget.length && queryIndex < lowerQuery.length; targetIndex++) {
+		if (lowerTarget[targetIndex] !== lowerQuery[queryIndex]) continue;
+		matchedIndices.push(targetIndex);
+		if (targetIndex === previousMatchIndex + 1) score += 5;
+		const previousCharacter = target[targetIndex - 1];
+		if (targetIndex === 0 || previousCharacter === "-" || previousCharacter === "_" || previousCharacter === "/" || previousCharacter === " ") score += 10;
+		previousMatchIndex = targetIndex;
+		queryIndex++;
+	}
+	if (queryIndex < lowerQuery.length) return null;
+	score -= matchedIndices[0] * 1;
+	return {
+		score,
+		matchedIndices
+	};
+};
+//#endregion
+//#region src/cli/ink/components/project-select.tsx
+var import_jsx_runtime = require_jsx_runtime();
+const MatchedName = ({ name, matchedIndices, isSelected }) => {
+	if (matchedIndices.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		bold: isSelected,
+		wrap: "truncate-end",
+		children: name
+	});
+	const matchedIndexSet = new Set(matchedIndices);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		bold: isSelected,
+		wrap: "truncate-end",
+		children: [...name].map((character, index) => matchedIndexSet.has(index) ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			color: "yellow",
+			children: character
+		}, index) : character)
+	});
+};
+const ProjectSelect = ({ packages, rootDirectory, onSubmit }) => {
+	const { rows: terminalRows } = useStdoutDimensions();
+	useExitOnCtrlC();
+	const [selectionMode, setSelectionMode] = (0, import_react.useState)("list");
+	const [searchQuery, setSearchQuery] = (0, import_react.useState)("");
+	const [selectedIndex, setSelectedIndex] = (0, import_react.useState)(0);
+	const [scrollOffset, setScrollOffset] = (0, import_react.useState)(0);
+	const [checkedDirectories, setCheckedDirectories] = (0, import_react.useState)(() => /* @__PURE__ */ new Set());
+	const didRecordProjectPathContext = (0, import_react.useRef)(false);
+	const matchedPackages = (0, import_react.useMemo)(() => {
+		const scoredPackages = packages.flatMap((workspacePackage) => {
+			const result = fuzzyMatch(searchQuery, workspacePackage.name);
+			return result ? [{
+				workspacePackage,
+				result
+			}] : [];
+		});
+		if (searchQuery.length > 0) scoredPackages.sort((leftPackage, rightPackage) => rightPackage.result.score - leftPackage.result.score);
+		return scoredPackages.map(({ workspacePackage, result }) => ({
+			workspacePackage,
+			matchedIndices: result.matchedIndices,
+			relativeDirectory: path.relative(rootDirectory, workspacePackage.directory) || "."
+		}));
+	}, [
+		packages,
+		rootDirectory,
+		searchQuery
+	]);
+	const hasProjectPathContext = matchedPackages.some(({ relativeDirectory, workspacePackage }) => relativeDirectory !== workspacePackage.name);
+	(0, import_react.useEffect)(() => {
+		if (!hasProjectPathContext || didRecordProjectPathContext.current) return;
+		didRecordProjectPathContext.current = true;
+		recordCount(METRIC.tuiProjectPathContextShown);
+	}, [hasProjectPathContext]);
+	const isSearching = selectionMode === "search";
+	const hasFilterLine = isSearching || searchQuery.length > 0;
+	const listHeight = Math.max(1, Math.min(Math.max(matchedPackages.length, 1), terminalRows - 3 - (hasFilterLine ? 1 : 0)));
+	const selectedPackageIndex = matchedPackages.length === 0 ? 0 : clampNumber(selectedIndex, 0, matchedPackages.length - 1);
+	const selectedWorkspacePackage = matchedPackages[selectedPackageIndex]?.workspacePackage;
+	const updateFilter = (nextSearchQuery) => {
+		setSearchQuery(nextSearchQuery);
+		setSelectedIndex(0);
+		setScrollOffset(0);
+	};
+	const moveSelection = (indexDelta) => {
+		if (matchedPackages.length === 0) return;
+		const nextSelectedIndex = clampNumber(selectedPackageIndex + indexDelta, 0, matchedPackages.length - 1);
+		setSelectedIndex(nextSelectedIndex);
+		setScrollOffset((currentOffset) => {
+			if (nextSelectedIndex < currentOffset) return nextSelectedIndex;
+			if (nextSelectedIndex >= currentOffset + listHeight) return nextSelectedIndex - listHeight + 1;
+			return currentOffset;
+		});
+	};
+	const toggleCheckedDirectory = (directory) => {
+		setCheckedDirectories((currentCheckedDirectories) => {
+			const updatedCheckedDirectories = new Set(currentCheckedDirectories);
+			if (updatedCheckedDirectories.has(directory)) updatedCheckedDirectories.delete(directory);
+			else updatedCheckedDirectories.add(directory);
+			return updatedCheckedDirectories;
+		});
+	};
+	const submitDirectories = (directories) => {
+		onSubmit([...directories]);
+	};
+	const submitSelection = () => {
+		if (checkedDirectories.size > 0) {
+			const selectedDirectories = [];
+			for (const workspacePackage of packages) if (checkedDirectories.has(workspacePackage.directory)) selectedDirectories.push(workspacePackage.directory);
+			return submitDirectories(selectedDirectories);
+		}
+		if (selectedWorkspacePackage) submitDirectories([selectedWorkspacePackage.directory]);
+	};
+	useInput((input, key) => {
+		if (isSearching) {
+			if (key.return) return setSelectionMode("list");
+			if (key.escape) {
+				updateFilter("");
+				return setSelectionMode("list");
+			}
+			if (key.downArrow || key.ctrl && input === "n") return moveSelection(1);
+			if (key.upArrow || key.ctrl && input === "p") return moveSelection(-1);
+			if (key.backspace || key.delete) return updateFilter(searchQuery.slice(0, -1));
+			if (isPrintableInput(input) && !key.ctrl && !key.meta) updateFilter(searchQuery + input);
+			return;
+		}
+		if (input === "/") return setSelectionMode("search");
+		if (input === " ") {
+			if (selectedWorkspacePackage) toggleCheckedDirectory(selectedWorkspacePackage.directory);
+			return;
+		}
+		if (input === "a") {
+			if (matchedPackages.length === 0) return;
+			setCheckedDirectories((currentCheckedDirectories) => {
+				const updatedCheckedDirectories = new Set(currentCheckedDirectories);
+				const shouldClearMatches = matchedPackages.every((matchedPackage) => currentCheckedDirectories.has(matchedPackage.workspacePackage.directory));
+				for (const matchedPackage of matchedPackages) if (shouldClearMatches) updatedCheckedDirectories.delete(matchedPackage.workspacePackage.directory);
+				else updatedCheckedDirectories.add(matchedPackage.workspacePackage.directory);
+				return updatedCheckedDirectories;
+			});
+			return;
+		}
+		if (input === "q") return submitDirectories([]);
+		if (key.escape) {
+			if (searchQuery.length > 0) return updateFilter("");
+			if (checkedDirectories.size > 0) return setCheckedDirectories(/* @__PURE__ */ new Set());
+			return submitDirectories([]);
+		}
+		if (key.return) return submitSelection();
+		if (key.downArrow || input === "j") return moveSelection(1);
+		if (key.upArrow || input === "k") return moveSelection(-1);
+		if (key.pageDown) return moveSelection(listHeight);
+		if (key.pageUp) return moveSelection(-listHeight);
+	});
+	const visibleStart = resolveVisibleStart({
+		itemCount: matchedPackages.length,
+		offset: scrollOffset,
+		selectedIndex: selectedPackageIndex,
+		viewportHeight: listHeight
+	});
+	const visibleMatches = matchedPackages.slice(visibleStart, visibleStart + listHeight);
+	const longestNameLength = Math.max(0, ...packages.map((workspacePackage) => workspacePackage.name.length));
+	let filterLine = null;
+	if (isSearching) filterLine = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+		wrap: "truncate-end",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: "cyan",
+				children: "/ "
+			}),
+			searchQuery.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: searchQuery }) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				inverse: true,
+				children: " "
+			})
+		]
+	});
+	else if (searchQuery.length > 0) filterLine = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		dimColor: true,
+		wrap: "truncate-end",
+		children: `filter: ${searchQuery}`
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				wrap: "truncate-end",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					bold: true,
+					children: "Select projects to scan"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					children: [
+						"  ",
+						checkedDirectories.size,
+						"/",
+						packages.length
+					]
+				})]
+			}),
+			filterLine,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				flexDirection: "column",
+				height: listHeight,
+				children: matchedPackages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "No matching projects"
+				}) : visibleMatches.map((matchedPackage, visiblePackageIndex) => {
+					const isSelected = visibleStart + visiblePackageIndex === selectedPackageIndex;
+					const isChecked = checkedDirectories.has(matchedPackage.workspacePackage.directory);
+					const shouldShowRelativeDirectory = matchedPackage.relativeDirectory !== matchedPackage.workspacePackage.name;
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						wrap: "truncate-end",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								color: isSelected ? "cyan" : void 0,
+								children: isSelected ? `${terminalSymbols.pointer} ` : "  "
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								color: isChecked ? "green" : void 0,
+								children: isChecked ? `${terminalSymbols.radioOn} ` : `${terminalSymbols.radioOff} `
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MatchedName, {
+								name: matchedPackage.workspacePackage.name,
+								matchedIndices: matchedPackage.matchedIndices,
+								isSelected
+							}),
+							shouldShowRelativeDirectory ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+								dimColor: true,
+								children: [" ".repeat(longestNameLength - matchedPackage.workspacePackage.name.length + 2), matchedPackage.relativeDirectory]
+							}) : null
+						]
+					}, matchedPackage.workspacePackage.directory);
+				})
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					wrap: "truncate-end",
+					children: isSearching ? "type to filter · enter confirm · esc clear" : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+						"space select · a all · / search · ",
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							color: "cyan",
+							children: "enter"
+						}),
+						" to submit · q cancel"
+					] })
+				})
+			})
+		]
+	});
+};
+//#endregion
+//#region src/cli/utils/onboarding-pacing.ts
+const FORCE_ONBOARDING_ENV_VAR = "REACT_DOCTOR_FORCE_ONBOARDING";
+const FALSY_FLAG_VALUES = new Set([
+	"",
+	"0",
+	"false"
+]);
+const isOnboardingForced = (environment = process.env) => {
+	const value = environment[FORCE_ONBOARDING_ENV_VAR];
+	return value !== void 0 && !FALSY_FLAG_VALUES.has(value.toLowerCase());
+};
+const shouldRecordOnboarding = (input) => input.paceOnboardingSections && !input.forceOnboarding && !input.verbose && !input.isNonInteractiveEnvironment;
+const canAnimateOnboarding = (stream = process.stdout) => {
+	if (!(stream.isTTY === true && (stream.columns ?? 0) > 0 && process.env.TERM !== "dumb")) return false;
+	if (isOnboardingForced()) return true;
+	return !isGitHookEnvironment() && !isCiEnvironment();
+};
+//#endregion
+//#region src/cli/utils/onboarding-state.ts
+const ONBOARDING_GATE = {
+	id: ONBOARDING_EVENT,
+	scope: "global"
+};
+const markOnboardingComplete = (options = {}) => {
+	if (isGatePending(ONBOARDING_GATE, {}, options)) recordGate(ONBOARDING_GATE, {}, options);
+};
+//#endregion
+//#region src/cli/ink/hooks/use-report-reveal.ts
+const useReportReveal = ({ issueCount, onRevealComplete }) => {
+	const { stdout } = useStdout();
+	const shouldAnimate = issueCount > 0 && canAnimateOnboarding(stdout ?? void 0);
+	const streamStepCount = Math.min(12, Math.max(issueCount, 8));
+	const [streamStep, setStreamStep] = (0, import_react.useState)(0);
+	const [didRevealActions, setDidRevealActions] = (0, import_react.useState)(false);
+	const didNotifyRevealComplete = (0, import_react.useRef)(false);
+	const isStreaming = shouldAnimate && streamStep < streamStepCount;
+	const didReachActions = shouldAnimate ? didRevealActions : stdout?.isTTY === true;
+	(0, import_react.useEffect)(() => {
+		if (!shouldAnimate) return;
+		let nextStreamStep = 0;
+		const intervalId = setInterval(() => {
+			nextStreamStep = Math.min(streamStepCount, nextStreamStep + 1);
+			setStreamStep(nextStreamStep);
+			if (nextStreamStep === streamStepCount) clearInterval(intervalId);
+		}, 125);
+		return () => clearInterval(intervalId);
+	}, [shouldAnimate, streamStepCount]);
+	(0, import_react.useEffect)(() => {
+		if (!shouldAnimate || isStreaming) return;
+		const timeoutId = setTimeout(() => setDidRevealActions(true), 850);
+		return () => clearTimeout(timeoutId);
+	}, [isStreaming, shouldAnimate]);
+	(0, import_react.useEffect)(() => {
+		if (!didReachActions || didNotifyRevealComplete.current) return;
+		didNotifyRevealComplete.current = true;
+		onRevealComplete?.();
+	}, [didReachActions, onRevealComplete]);
+	if (!shouldAnimate) return {
+		phase: "actions",
+		streamSelectedIndex: 0
+	};
+	if (isStreaming) return {
+		phase: "streaming",
+		streamSelectedIndex: streamStep % issueCount
+	};
+	return {
+		phase: didRevealActions ? "actions" : "score",
+		streamSelectedIndex: 0
+	};
+};
+//#endregion
+//#region src/cli/ink/lib/diagnostic-list-entries.ts
+const CATEGORY_RANK = new Map(DIAGNOSTIC_CATEGORY_BUCKETS.map((category, index) => [category, index]));
+const buildDiagnosticListEntries = (rows) => {
+	const rowsByCategory = /* @__PURE__ */ new Map();
+	for (const [rowIndex, row] of rows.entries()) {
+		const categoryRows = rowsByCategory.get(row.category) ?? [];
+		categoryRows.push({
+			row,
+			rowIndex
+		});
+		rowsByCategory.set(row.category, categoryRows);
+	}
+	const orderedCategories = [...rowsByCategory.keys()].sort((categoryA, categoryB) => {
+		const rankDelta = (CATEGORY_RANK.get(categoryA) ?? Number.MAX_SAFE_INTEGER) - (CATEGORY_RANK.get(categoryB) ?? Number.MAX_SAFE_INTEGER);
+		return rankDelta !== 0 ? rankDelta : categoryA.localeCompare(categoryB);
+	});
+	const entries = [];
+	for (const category of orderedCategories) {
+		const categoryRows = rowsByCategory.get(category) ?? [];
+		entries.push({
+			kind: "header",
+			category
+		});
+		for (const indexedRow of categoryRows) entries.push({
+			kind: "item",
+			...indexedRow
+		});
+	}
+	return entries;
+};
+//#endregion
+//#region src/cli/ink/lib/diagnostic-rows.ts
+const buildDiagnosticRows = (diagnostics, scores) => {
+	return buildSortedRuleGroups(diagnostics, buildRulePriorityMap(scores)).map(([ruleKey, ruleDiagnostics]) => {
+		const representative = ruleDiagnostics.find((diagnostic) => diagnostic.line > 0) ?? ruleDiagnostics[0];
+		return {
+			ruleKey,
+			diagnostics: ruleDiagnostics,
+			severity: representative.severity === "error" ? "error" : "warning",
+			category: representative.category,
+			title: representative.title ?? ruleKey,
+			location: formatDiagnosticSite(representative),
+			siteCount: ruleDiagnostics.length,
+			representative,
+			ruleGuideUrl: hasPublishedFixRecipe(representative) ? buildRuleDocsUrl(representative.plugin, representative.rule) : null
+		};
+	});
+};
+//#endregion
+//#region src/cli/ink/lib/resolve-report-layout.ts
+const STACKED_FIXED_ROWS = 9;
+const resolveReportLayout = ({ columns, diagnosticEntryCount, terminalRows }) => {
+	const width = Math.max(1, columns - 2);
+	const reportRows = Math.max(0, terminalRows - 1);
+	const isWide = columns >= 120 && terminalRows >= 22;
+	const isCompact = !isWide && terminalRows <= TUI_REPORT_COMPACT_MAX_ROWS;
+	const showsViewerScoreHeader = !isCompact || reportRows >= 8;
+	const detailHeight = Math.max(0, isWide ? reportRows - 3 : Math.min(15, reportRows - STACKED_FIXED_ROWS - 3));
+	const availableListHeight = isWide ? Math.max(3, detailHeight - 4 - 1) : Math.max(3, reportRows - STACKED_FIXED_ROWS - detailHeight);
+	const isStackedReportCapped = !isCompact && !isWide && availableListHeight > 16;
+	let listHeight = availableListHeight;
+	if (isCompact) {
+		const viewerScoreHeaderRows = showsViewerScoreHeader ? 4 : 0;
+		listHeight = Math.min(diagnosticEntryCount, Math.max(3, reportRows - 1 - viewerScoreHeaderRows));
+	} else if (!isWide) listHeight = Math.min(diagnosticEntryCount, 16, availableListHeight);
+	const detailColumnWidth = Math.max(20, Math.floor(width * TUI_REPORT_DETAIL_WIDTH_FRACTION));
+	const listColumnWidth = Math.max(20, width - detailColumnWidth - 3);
+	let layout = "stacked";
+	if (isCompact) layout = "compact";
+	else if (isWide) layout = "split";
+	return {
+		detailColumnWidth,
+		detailHeight,
+		isStackedReportCapped,
+		layout,
+		listColumnWidth,
+		listHeight,
+		showsViewerScoreHeader,
+		width
+	};
+};
+//#endregion
+//#region src/cli/ink/components/action-menu.tsx
+const ActionMenu = ({ actions, selectedIndex: controlledSelectedIndex, onSelectionChange, onEscape, onQuit }) => {
+	const [internalSelectedIndex, setInternalSelectedIndex] = (0, import_react.useState)(0);
+	const selectedIndex = controlledSelectedIndex ?? internalSelectedIndex;
+	const changeSelection = onSelectionChange ?? setInternalSelectedIndex;
+	useInput((input, key) => {
+		if (input === "q") return onQuit();
+		if (key.escape) return onEscape();
+		if (actions.length === 0) return;
+		if (key.upArrow || input === "k") return changeSelection(Math.max(0, selectedIndex - 1));
+		if (key.downArrow || input === "j") return changeSelection(Math.min(actions.length - 1, selectedIndex + 1));
+		if (key.return) actions[selectedIndex]?.onSelect();
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		flexDirection: "column",
+		marginTop: 1,
+		children: actions.map((action, index) => {
+			const isSelected = index === selectedIndex;
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+				flexDirection: "column",
+				marginBottom: index < actions.length - 1 ? 1 : void 0,
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					color: isSelected ? "cyan" : void 0,
+					bold: isSelected,
+					children: [
+						isSelected ? terminalSymbols.pointer : terminalSymbols.pointerSmall,
+						" ",
+						action.label
+					]
+				}), isSelected ? action.description : null]
+			}, action.id);
+		})
+	});
+};
+//#endregion
+//#region src/cli/ink/components/agent-handoff.tsx
+const AgentHandoff = ({ agents, onSelect, onCopyPrompt, onBack, onQuit }) => {
+	const actions = [...agents.map((agentId) => ({
+		id: agentId,
+		label: getSkillAgentConfig(agentId).displayName,
+		onSelect: () => onSelect(agentId)
+	})), {
+		id: "copy-prompt",
+		label: "Copy prompt",
+		description: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			dimColor: true,
+			children: "Paste into any agent or edit it first"
+		}),
+		onSelect: onCopyPrompt
+	}];
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				paddingLeft: 2,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					bold: true,
+					children: "Choose how to continue"
+				})
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActionMenu, {
+				actions,
+				onEscape: onBack,
+				onQuit
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "↑/↓ move · enter select · esc back · q quit"
+				})
+			})
+		]
+	});
+};
+//#endregion
+//#region src/cli/utils/format-hyperlink.ts
+const OSC = "\x1B]";
+const ST = "\x1B\\";
+/**
+* Wraps `text` in an OSC 8 hyperlink pointing at `uri`. The visible characters
+* are exactly `text`; the link is carried in escape sequences a capable
+* terminal turns into a click target.
+*/
+const formatHyperlink = (text, uri) => `${OSC}8;;${uri}${ST}${text}${OSC}8;;${ST}`;
+//#endregion
+//#region src/cli/utils/supports-hyperlinks.ts
+const HYPERLINK_CAPABLE_TERM_PROGRAMS = new Set([
+	"iTerm.app",
+	"WezTerm",
+	"vscode",
+	"Hyper",
+	"ghostty",
+	"Tabby",
+	"rio"
+]);
+const parseVteVersion = (raw) => {
+	const parsed = Number.parseInt(raw ?? "", 10);
+	return Number.isNaN(parsed) ? 0 : parsed;
+};
+/**
+* Whether `stream` is a terminal that renders OSC 8 hyperlinks. Auto-detected
+* from terminal-identity env vars; the de-facto `FORCE_HYPERLINK` env var
+* overrides detection (`FORCE_HYPERLINK=0`/`false` forces off, any other value
+* forces on), mirroring how the ecosystem's terminal libraries gate the same
+* feature. Off for non-TTYs, `TERM=dumb`, and CI (whose log viewers render the
+* raw escape rather than a link). Unknown terminals default to off.
+*/
+const supportsHyperlinks = (stream = process.stdout, env = process.env) => {
+	const forced = env.FORCE_HYPERLINK;
+	if (forced !== void 0 && forced !== "") return forced !== "0" && forced.toLowerCase() !== "false";
+	if (stream.isTTY !== true) return false;
+	if (env.TERM === "dumb") return false;
+	if (isCiEnvironment(env)) return false;
+	if (env.WT_SESSION) return true;
+	if (env.KITTY_WINDOW_ID || env.TERM === "xterm-kitty") return true;
+	if (parseVteVersion(env.VTE_VERSION) >= 5e3) return true;
+	return Boolean(env.TERM_PROGRAM && HYPERLINK_CAPABLE_TERM_PROGRAMS.has(env.TERM_PROGRAM));
+};
+//#endregion
+//#region src/cli/ink/components/tui-link.tsx
+const TuiLink = ({ children, url }) => {
+	const shouldFormatHyperlink = supportsHyperlinks();
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Transform, {
+		transform: (text) => shouldFormatHyperlink ? formatHyperlink(text, url) : text,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children })
+	});
+};
+//#endregion
+//#region src/cli/ink/components/ci-justification.tsx
+const CiJustification = () => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+	flexDirection: "column",
+	paddingLeft: 2,
+	children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			dimColor: true,
+			children: "Scan every pull request to prevent new React issues while you fix the backlog."
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			dimColor: true,
+			children: [
+				"Used by teams at ",
+				CI_TRUST_COMPANIES,
+				"."
+			]
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TuiLink, {
+			url: GITHUB_ACTIONS_SETUP_URL,
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: "cyan",
+				children: GITHUB_ACTIONS_SETUP_URL
+			})
+		})
+	]
+});
+//#endregion
+//#region src/cli/ink/components/ci-setup.tsx
+const CiSetup = ({ feedback, onConfirm, onLearnMore, onBack, onQuit }) => {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				bold: true,
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					color: "cyan",
+					children: "?"
+				}), " Add React Doctor to GitHub Actions?"]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CiJustification, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActionMenu, {
+				actions: [{
+					id: "confirm",
+					label: "Yes, add the workflow",
+					onSelect: onConfirm
+				}, {
+					id: "learn-more",
+					label: "Open the GitHub Actions guide",
+					onSelect: onLearnMore
+				}],
+				onEscape: onBack,
+				onQuit
+			}),
+			feedback ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: feedback.didSucceed ? "green" : "yellow",
+				children: feedback.didSucceed ? feedback.message : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TuiLink, {
+					url: GITHUB_ACTIONS_SETUP_URL,
+					children: feedback.message
+				})
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "↑/↓ move · enter select · esc back · q quit"
+				})
+			})
+		]
+	});
+};
+//#endregion
+//#region src/cli/ink/hooks/use-scroll-viewport.ts
+const useScrollViewport = (options) => {
+	const { itemCount, height, initialSelectedIndex = 0, isActive = true, isSelectable, onSelectedIndexChange } = options;
+	const canSelect = (index) => index >= 0 && index < itemCount && (isSelectable ? isSelectable(index) : true);
+	const seekSelectable = (start, step) => {
+		for (let index = start; index >= 0 && index < itemCount; index += step) if (canSelect(index)) return index;
+		return -1;
+	};
+	const nearestSelectable = (target, step) => {
+		const ahead = seekSelectable(target, step);
+		if (ahead !== -1) return ahead;
+		const behind = seekSelectable(target, -step);
+		return behind === -1 ? target : behind;
+	};
+	const [selectedIndex, setSelectedIndex] = (0, import_react.useState)(() => {
+		const first = seekSelectable(clampNumber(initialSelectedIndex, 0, itemCount - 1), 1);
+		return first === -1 ? 0 : first;
+	});
+	const [offset, setOffset] = (0, import_react.useState)(0);
+	const awaitingSecondG = (0, import_react.useRef)(false);
+	const moveTo = (rawIndex, step) => {
+		const nextSelectedIndex = nearestSelectable(clampNumber(rawIndex, 0, itemCount - 1), step);
+		setSelectedIndex(nextSelectedIndex);
+		onSelectedIndexChange?.(nextSelectedIndex);
+		setOffset((currentOffset) => {
+			if (nextSelectedIndex < currentOffset) return nextSelectedIndex;
+			if (nextSelectedIndex >= currentOffset + height) return nextSelectedIndex - height + 1;
+			return currentOffset;
+		});
+	};
+	useInput((input, key) => {
+		if (itemCount === 0) return;
+		const isSecondG = awaitingSecondG.current && input === "g";
+		if (input !== "g") awaitingSecondG.current = false;
+		if (key.downArrow || input === "j") return moveTo(selectedIndex + 1, 1);
+		if (key.upArrow || input === "k") return moveTo(selectedIndex - 1, -1);
+		if (key.pageDown) return moveTo(selectedIndex + height, 1);
+		if (key.pageUp) return moveTo(selectedIndex - height, -1);
+		if (key.ctrl && input === "d") return moveTo(selectedIndex + Math.floor(height / 2), 1);
+		if (key.ctrl && input === "u") return moveTo(selectedIndex - Math.floor(height / 2), -1);
+		if (input === "G") return moveTo(itemCount - 1, -1);
+		if (isSecondG) {
+			awaitingSecondG.current = false;
+			return moveTo(0, 1);
+		}
+		if (input === "g") awaitingSecondG.current = true;
+	}, { isActive });
+	const resolvedSelected = canSelect(selectedIndex) ? selectedIndex : nearestSelectable(clampNumber(selectedIndex, 0, itemCount - 1), 1);
+	const visibleStart = resolveVisibleStart({
+		itemCount,
+		offset,
+		selectedIndex: resolvedSelected,
+		viewportHeight: height
+	});
+	return {
+		selectedIndex: resolvedSelected,
+		visibleStart,
+		visibleEnd: Math.min(itemCount, visibleStart + height)
+	};
+};
+//#endregion
+//#region src/cli/ink/lib/build-issue-prompt.ts
+const buildIssuePrompt = ({ row, projectName }) => {
+	const { representative } = row;
+	const severityLabel = row.severity === "error" ? "ERROR" : "WARN";
+	const uniqueSites = [...new Set(row.diagnostics.map(formatDiagnosticSite))];
+	const inlineSites = uniqueSites.slice(0, 8);
+	const remainingSiteCount = uniqueSites.length - inlineSites.length;
+	const lines = [
+		`Fix exactly one React Doctor rule in ${projectName}:`,
+		"",
+		`${severityLabel} ${row.category}: ${row.title} (${row.ruleKey}, ×${row.siteCount})`,
+		representative.message
+	];
+	if (representative.help) lines.push("", `Suggested fix: ${representative.help}`);
+	const fixRecipeLine = formatFixRecipeLine(representative);
+	if (fixRecipeLine) lines.push("", fixRecipeLine);
+	lines.push("", "Scope:", `- Fix only ${row.ruleKey}.`, "- Fix the root cause; do not suppress, disable, or silence the rule.", "- Keep unrelated refactors out of this pass.", "", "Affected sites:", ...inlineSites.map((site) => `- ${site}`));
+	if (remainingSiteCount > 0) lines.push(`- +${remainingSiteCount} more sites`);
+	const learnMoreLine = formatLearnMoreLine(representative);
+	if (learnMoreLine) lines.push("", learnMoreLine);
+	lines.push("", `Verify with \`npx react-doctor@latest --verbose\` and confirm ${row.ruleKey} is gone before moving on.`);
+	return lines.join("\n");
+};
+//#endregion
+//#region src/cli/ink/lib/severity-variants.ts
+const ICONS = isUnicodeSupported() ? {
+	error: "✖",
+	warning: "⚠"
+} : {
+	error: "x",
+	warning: "!"
+};
+const severityVariant = (severity) => severity === "error" ? {
+	color: "red",
+	icon: ICONS.error,
+	label: "error"
+} : {
+	color: "yellow",
+	icon: ICONS.warning,
+	label: "warning"
+};
+//#endregion
+//#region src/cli/ink/components/diagnostic-detail.tsx
+const DiagnosticDetail = ({ row, rootDirectory }) => {
+	const codeFrame = (0, import_react.useMemo)(() => {
+		if (!row) return null;
+		const { representative } = row;
+		return buildCodeFrame({
+			filePath: representative.filePath,
+			line: representative.line,
+			column: representative.column,
+			rootDirectory
+		});
+	}, [row, rootDirectory]);
+	if (!row) return null;
+	const variant = severityVariant(row.severity);
+	const { representative } = row;
+	const impact = getCategoryImpact(row.category);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			wrap: "truncate-end",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					color: variant.color,
+					children: [variant.icon, " "]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					color: variant.color,
+					bold: true,
+					children: row.title
+				}),
+				row.siteCount > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					children: [" ×", row.siteCount]
+				}) : null
+			]
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+			flexDirection: "column",
+			paddingLeft: 2,
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					wrap: "truncate-end",
+					children: [
+						row.category,
+						" · ",
+						variant.label,
+						" · ",
+						row.location,
+						representative.fileContext ? ` · ${representative.fileContext} file` : ""
+					]
+				}),
+				impact ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						wrap: "wrap",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							color: "cyan",
+							children: "Impact "
+						}), impact]
+					})
+				}) : null,
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						wrap: "wrap",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							color: "cyan",
+							children: "Why "
+						}), representative.message]
+					})
+				}),
+				codeFrame ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: codeFrame })
+				}) : null,
+				representative.help ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						wrap: "wrap",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							color: "cyan",
+							children: "Fix "
+						}), representative.help]
+					})
+				}) : null,
+				row.ruleGuideUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						color: "blue",
+						wrap: "truncate-end",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(TuiLink, {
+							url: row.ruleGuideUrl,
+							children: ["Rule guide: ", row.ruleGuideUrl]
+						})
+					})
+				}) : null
+			]
+		})]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/diagnostic-item.tsx
+const DiagnosticItem = ({ row, isSelected, isRead }) => {
+	const variant = severityVariant(row.severity);
+	const shouldHighlightSeverity = isSelected || !isRead;
+	let marker = "• ";
+	if (isRead) marker = "  ";
+	if (isSelected) marker = "› ";
+	let markerColor = shouldHighlightSeverity ? variant.color : void 0;
+	if (isSelected) markerColor = "cyan";
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+		wrap: "truncate-end",
+		dimColor: isRead && !isSelected,
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: markerColor,
+				children: marker
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: shouldHighlightSeverity ? variant.color : void 0,
+				children: `${variant.icon} `
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: shouldHighlightSeverity ? variant.color : void 0,
+				bold: isSelected,
+				children: row.title
+			}),
+			row.siteCount > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: true,
+				children: [" ×", row.siteCount]
+			}) : null
+		]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/status-bar.tsx
+const StatusBar = ({ total, errorCount, warningCount, position, issueCount, unreadCount, projectCount, keyHints = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+	dimColor: true,
+	children: "↑/↓ to move"
+}), exitHint = "q to quit", compact = false }) => {
+	const counts = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			bold: true,
+			children: pluralize(total, "finding")
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			dimColor: true,
+			children: "  "
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			color: "red",
+			children: pluralize(errorCount, "error")
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			dimColor: true,
+			children: "  "
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			color: "yellow",
+			children: pluralize(warningCount, "warning")
+		})
+	] });
+	if (compact) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+		wrap: "truncate-end",
+		children: [
+			counts,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: true,
+				children: [
+					"  ·  ",
+					"issue ",
+					position,
+					"/",
+					issueCount,
+					"  ·  "
+				]
+			}),
+			keyHints,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: true,
+				children: [" · ", exitHint]
+			})
+		]
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			wrap: "truncate-end",
+			children: [
+				counts,
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					children: [
+						"  ·  ",
+						"issue ",
+						position,
+						"/",
+						issueCount
+					]
+				}),
+				projectCount !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					children: ["  ·  ", pluralize(projectCount, "project")]
+				}) : null
+			]
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			wrap: "truncate-end",
+			children: [
+				unreadCount !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					color: unreadCount > 0 ? "cyan" : void 0,
+					dimColor: unreadCount === 0,
+					children: [
+						pluralize(unreadCount, "issue"),
+						" unread",
+						"  ·  "
+					]
+				}) : null,
+				keyHints,
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					dimColor: true,
+					children: [" · ", exitHint]
+				})
+			]
+		})]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/diagnostic-list.tsx
+const DIAGNOSTIC_KEY_HINTS = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+	/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		dimColor: true,
+		children: "↑/↓ move · "
+	}),
+	/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		color: "cyan",
+		children: "enter"
+	}),
+	/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		dimColor: true,
+		children: " copy context"
+	})
+] });
+const DiagnosticList = ({ header, rows, entries, width, listColumnWidth, detailColumnWidth, listHeight, detailHeight, layout, rootDirectory, projectName, projectCount, initialSelectedRowIndex, readRuleKeys, onSelectedRowIndexChange, onQuit, onBack = onQuit, exitHint }) => {
+	const isSplit = layout === "split";
+	const isCompact = layout === "compact";
+	const initialSelectedEntryIndex = initialSelectedRowIndex === null ? 0 : Math.max(0, entries.findIndex((entry) => entry.kind === "item" && entry.rowIndex === initialSelectedRowIndex));
+	const { selectedIndex: selectedEntryIndex, visibleStart: visibleEntryStart, visibleEnd: visibleEntryEnd } = useScrollViewport({
+		itemCount: entries.length,
+		height: listHeight,
+		initialSelectedIndex: initialSelectedEntryIndex,
+		isSelectable: (entryIndex) => entries[entryIndex]?.kind === "item",
+		onSelectedIndexChange: (entryIndex) => {
+			const entry = entries[entryIndex];
+			if (entry?.kind === "item") onSelectedRowIndexChange(entry.rowIndex);
+		}
+	});
+	const visibleEntries = entries.slice(visibleEntryStart, visibleEntryEnd);
+	const selectedEntry = entries[selectedEntryIndex];
+	const selected = selectedEntry?.kind === "item" ? selectedEntry.row : null;
+	const selectedRuleKey = selected?.ruleKey ?? null;
+	const initialSelectedRuleKey = (0, import_react.useRef)(selectedRuleKey);
+	const didRecordFindingNavigation = (0, import_react.useRef)(false);
+	const [copiedRuleKey, setCopiedRuleKey] = (0, import_react.useState)(null);
+	const [copyFailedRuleKey, setCopyFailedRuleKey] = (0, import_react.useState)(null);
+	const effectiveReadRuleKeys = (0, import_react.useMemo)(() => {
+		if (!selectedRuleKey || readRuleKeys.has(selectedRuleKey)) return readRuleKeys;
+		return new Set(readRuleKeys).add(selectedRuleKey);
+	}, [readRuleKeys, selectedRuleKey]);
+	(0, import_react.useEffect)(() => {
+		if (!selectedRuleKey || selectedRuleKey === initialSelectedRuleKey.current || didRecordFindingNavigation.current) return;
+		didRecordFindingNavigation.current = true;
+		recordCount(METRIC.tuiFindingNavigated);
+	}, [selectedRuleKey]);
+	const copySelectedIssueContext = () => {
+		if (!selected) return;
+		const issuePrompt = buildIssuePrompt({
+			row: selected,
+			projectName
+		});
+		const ruleKey = selected.ruleKey;
+		copyToClipboard(issuePrompt).then((didCopyIssueContext) => {
+			if (didCopyIssueContext) {
+				setCopiedRuleKey(ruleKey);
+				setCopyFailedRuleKey(null);
+				return;
+			}
+			recordCount(METRIC.tuiReportActionSelected, 1, { action: "copy-issue-context-failed" });
+			setCopiedRuleKey(null);
+			setCopyFailedRuleKey(ruleKey);
+		});
+	};
+	useInput((input, key) => {
+		if (input === "q") return onQuit();
+		if (key.escape) return onBack();
+		if (key.return && selected) {
+			recordCount(METRIC.tuiReportActionSelected, 1, { action: "copy-issue-context" });
+			copySelectedIssueContext();
+		}
+	});
+	let totalFindingCount = 0;
+	let errorFindingCount = 0;
+	let warningFindingCount = 0;
+	for (const row of rows) {
+		totalFindingCount += row.siteCount;
+		if (row.severity === "error") errorFindingCount += row.siteCount;
+		else warningFindingCount += row.siteCount;
+	}
+	const selectedIssuePosition = entries.slice(0, selectedEntryIndex + 1).filter((entry) => entry.kind === "item").length;
+	const unreadIssueCount = rows.length - rows.filter((row) => effectiveReadRuleKeys.has(row.ruleKey)).length;
+	const listColumn = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		flexDirection: "column",
+		height: listHeight,
+		width: isSplit ? listColumnWidth : width,
+		children: visibleEntries.map((entry, index) => {
+			const entryIndex = visibleEntryStart + index;
+			if (entry.kind === "header") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				bold: true,
+				children: entry.category
+			}, `header-${entry.category}`);
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiagnosticItem, {
+				row: entry.row,
+				isSelected: entryIndex === selectedEntryIndex,
+				isRead: effectiveReadRuleKeys.has(entry.row.ruleKey)
+			}, entry.row.ruleKey);
+		})
+	});
+	let copyFeedback = null;
+	if (copiedRuleKey === selectedRuleKey) copyFeedback = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		marginTop: 1,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			color: "green",
+			children: "✓ Copied issue context"
+		})
+	});
+	else if (copyFailedRuleKey === selectedRuleKey) copyFeedback = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		marginTop: 1,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			color: "yellow",
+			children: "Couldn't copy issue context. Press Enter to try again."
+		})
+	});
+	const detailContent = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiagnosticDetail, {
+		row: selected,
+		rootDirectory
+	}), copyFeedback] });
+	let visibleKeyHints = DIAGNOSTIC_KEY_HINTS;
+	if (isCompact && copiedRuleKey === selectedRuleKey) visibleKeyHints = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		color: "green",
+		children: "✓ Copied issue context"
+	});
+	else if (isCompact && copyFailedRuleKey === selectedRuleKey) visibleKeyHints = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		color: "yellow",
+		children: "Copy failed · enter retry"
+	});
+	const statusBar = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+		marginTop: isCompact ? 0 : 1,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBar, {
+			total: totalFindingCount,
+			errorCount: errorFindingCount,
+			warningCount: warningFindingCount,
+			position: selectedIssuePosition,
+			issueCount: rows.length,
+			unreadCount: unreadIssueCount,
+			projectCount,
+			keyHints: visibleKeyHints,
+			exitHint,
+			compact: isCompact
+		})
+	});
+	if (isCompact) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width,
+		children: [
+			header,
+			listColumn,
+			statusBar
+		]
+	});
+	if (isSplit) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+			flexDirection: "row",
+			maxHeight: detailHeight,
+			overflowY: "hidden",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+				flexDirection: "column",
+				width: listColumnWidth,
+				marginRight: 1,
+				children: [header, /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+					marginTop: 1,
+					children: listColumn
+				})]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				flexDirection: "column",
+				width: detailColumnWidth,
+				borderStyle: "single",
+				borderColor: "gray",
+				borderTop: false,
+				borderRight: false,
+				borderBottom: false,
+				paddingLeft: 1,
+				overflowY: "hidden",
+				children: detailContent
+			})]
+		}), statusBar]
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width,
+		children: [
+			header,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: listColumn
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				dimColor: true,
+				children: "─".repeat(width)
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				flexDirection: "column",
+				maxHeight: detailHeight,
+				overflowY: "hidden",
+				children: detailContent
+			}),
+			statusBar
+		]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/handoff-ci-recommendation.tsx
+const HandoffCiRecommendation = ({ onAddToCi, onContinue, onQuit }) => {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				paddingLeft: 2,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					bold: true,
+					children: "Add React Doctor to GitHub Actions first"
+				})
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CiJustification, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActionMenu, {
+				actions: [{
+					id: "add-to-ci",
+					label: "Add to GitHub Actions first (Recommended)",
+					onSelect: onAddToCi
+				}, {
+					id: "continue",
+					label: "Continue without GitHub Actions",
+					onSelect: onContinue
+				}],
+				onEscape: onContinue,
+				onQuit
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "↑/↓ move · enter select · esc skip · q quit"
+				})
+			})
+		]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/report-landing.tsx
+const ReportStatus = ({ issueCount, emptyStateMessage, lintFailureReason, skippedChecks, incompleteMessage }) => {
+	const skippedCheckLabel = skippedChecks?.flatMap((skippedCheck) => skippedCheck === "lint" && lintFailureReason ? [] : [formatSkippedCheckLabel(skippedCheck)]).join(" and ");
+	const hasIncompleteResult = Boolean(incompleteMessage || lintFailureReason || skippedCheckLabel);
+	if (!hasIncompleteResult && issueCount > 0) return null;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		marginTop: 1,
+		children: [
+			incompleteMessage ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				color: "yellow",
+				children: ["⚠ ", incompleteMessage]
+			}) : null,
+			lintFailureReason ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				color: "yellow",
+				children: ["⚠ Lint did not run: ", lintFailureReason]
+			}) : null,
+			skippedCheckLabel ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				color: "yellow",
+				children: [
+					"⚠ ",
+					issueCount === 0 ? "No issues detected, but " : "",
+					skippedCheckLabel,
+					" checks failed — results are incomplete."
+				]
+			}) : null,
+			issueCount === 0 && !hasIncompleteResult ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				color: "green",
+				children: ["✔ ", emptyStateMessage ?? "No issues found. Nice work."]
+			}) : null
+		]
+	});
+};
+const ReportLanding = ({ header, phase, issueCount, emptyStateMessage, lintFailureReason, skippedChecks, incompleteMessage, actions, selectedIndex, onSelectionChange, onQuit }) => {
+	const showScore = phase === "actions" || phase === "score";
+	useInput((input) => {
+		if (input === "q") onQuit();
+	}, { isActive: phase !== "actions" });
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [
+			showScore ? header : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReportStatus, {
+				issueCount,
+				emptyStateMessage,
+				lintFailureReason,
+				skippedChecks,
+				incompleteMessage
+			}),
+			phase === "actions" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActionMenu, {
+				actions,
+				selectedIndex,
+				onSelectionChange,
+				onEscape: onQuit,
+				onQuit
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				marginTop: 1,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: actions.length === 0 ? "q quit" : "↑/↓ move · enter select · q quit"
+				})
+			})] }) : null
+		]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/report-issue-stream.tsx
+const ReportIssueStream = ({ rows, selectedIndex, width }) => {
+	const visibleRowCount = Math.min(rows.length, 3);
+	const visibleRows = Array.from({ length: visibleRowCount }, (_, visibleRowIndex) => {
+		const rowIndex = (selectedIndex - visibleRowCount + visibleRowIndex + 1 + rows.length) % rows.length;
+		return {
+			row: rows[rowIndex],
+			rowIndex
+		};
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width: Math.min(width, 60),
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			bold: true,
+			children: "Reviewing issues"
+		}), visibleRows.map(({ row, rowIndex }) => {
+			if (!row) return null;
+			const variant = severityVariant(row.severity);
+			const isSelected = rowIndex === selectedIndex;
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: !isSelected,
+				wrap: "truncate-end",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						color: isSelected ? variant.color : void 0,
+						children: [isSelected ? "›" : " ", " "]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						color: isSelected ? variant.color : void 0,
+						bold: isSelected,
+						children: [
+							row.category,
+							": ",
+							row.title
+						]
+					}),
+					row.siteCount > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						dimColor: true,
+						children: [" ×", row.siteCount]
+					}) : null
+				]
+			}, row.ruleKey);
+		})]
+	});
+};
+//#endregion
+//#region src/cli/utils/doctor-face.ts
+const doctorFace = (score) => {
+	if (score >= 75) return ["◠ ◠", " ▽ "];
+	if (score >= 50) return ["• •", " ─ "];
+	return ["x x", " ▽ "];
+};
+//#endregion
+//#region src/cli/utils/ease-out-cubic.ts
+const easeOutCubic = (progress) => 1 - (1 - progress) ** 3;
+//#endregion
+//#region src/cli/ink/hooks/use-animated-score.ts
+const useAnimatedScore = ({ score, projectedScore, shouldAnimate }) => {
+	const projectionTarget = projectedScore ?? score;
+	const hasProjection = projectionTarget > score;
+	const initialProjectedScore = !shouldAnimate && hasProjection ? projectionTarget : null;
+	const [displayScore, setDisplayScore] = (0, import_react.useState)(shouldAnimate ? 0 : score);
+	const [displayProjectedScore, setDisplayProjectedScore] = (0, import_react.useState)(initialProjectedScore);
+	(0, import_react.useEffect)(() => {
+		if (!shouldAnimate) {
+			setDisplayScore(score);
+			setDisplayProjectedScore(hasProjection ? projectionTarget : null);
+			return;
+		}
+		let timeoutId;
+		const runProjection = () => {
+			let projectionFrame = 1;
+			const renderProjectionFrame = () => {
+				const progress = easeOutCubic(projectionFrame / 16);
+				setDisplayProjectedScore(score + (projectionTarget - score) * progress);
+				if (projectionFrame < 16) {
+					projectionFrame += 1;
+					timeoutId = setTimeout(renderProjectionFrame, 35);
+				} else setDisplayProjectedScore(projectionTarget);
+			};
+			renderProjectionFrame();
+		};
+		let scoreFrame = 0;
+		const renderScoreFrame = () => {
+			const progress = easeOutCubic(scoreFrame / 40);
+			setDisplayScore(Math.round(score * progress));
+			if (scoreFrame < 40) {
+				scoreFrame += 1;
+				timeoutId = setTimeout(renderScoreFrame, 50);
+				return;
+			}
+			setDisplayScore(score);
+			if (hasProjection) runProjection();
+		};
+		renderScoreFrame();
+		return () => {
+			if (timeoutId !== void 0) clearTimeout(timeoutId);
+		};
+	}, [
+		shouldAnimate,
+		score,
+		projectionTarget,
+		hasProjection
+	]);
+	return {
+		displayScore,
+		displayProjectedScore
+	};
+};
+//#endregion
+//#region src/cli/ink/lib/score-color.ts
+const scoreColorName = (score) => {
+	if (score >= 75) return "green";
+	if (score >= 50) return "yellow";
+	return "red";
+};
+//#endregion
+//#region src/cli/ink/components/score-header.tsx
+const REACT_DOCTOR_URL = "https://react.doctor";
+const ReactDoctorLink = () => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(TuiLink, {
+	url: REACT_DOCTOR_URL,
+	children: ["React Doctor ", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+		dimColor: true,
+		children: [
+			"(",
+			REACT_DOCTOR_URL,
+			")"
+		]
+	})]
+});
+const ScoreHeader = ({ variant, score, projectedScore, projectName, issueCount, noScoreMessage, width }) => {
+	const { columns } = useStdoutDimensions();
+	const availableWidth = width ?? columns;
+	const { stdout } = useStdout();
+	const shouldAnimateScore = canAnimateOnboarding(stdout ?? void 0);
+	const visibleProjectedScore = variant === "landing" ? projectedScore : null;
+	const { displayScore, displayProjectedScore } = useAnimatedScore({
+		score: score?.score ?? 0,
+		projectedScore: visibleProjectedScore,
+		shouldAnimate: variant === "landing" && shouldAnimateScore && score !== null
+	});
+	if (!score) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		paddingLeft: 2,
+		width: availableWidth,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			wrap: "truncate-end",
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReactDoctorLink, {})
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			dimColor: true,
+			wrap: "wrap",
+			children: noScoreMessage ?? `${pluralize(issueCount, "finding")} · ${projectName}`
+		})]
+	});
+	const scoreColor = scoreColorName(score.score);
+	const scoreSummaryLine = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+		wrap: "truncate-end",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: scoreColor,
+				bold: true,
+				children: displayScore
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: true,
+				children: [
+					" / ",
+					100,
+					" "
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: scoreColor,
+				children: score.label
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				dimColor: true,
+				children: ["  ·  ", projectName]
+			})
+		]
+	});
+	if (availableWidth < 23) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width: availableWidth,
+		children: [scoreSummaryLine, /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			wrap: "truncate-end",
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReactDoctorLink, {})
+		})]
+	});
+	const barWidth = Math.max(10, Math.min(50, availableWidth - 11 - 2));
+	const filledBarWidth = Math.round(displayScore / 100 * barWidth);
+	const projectedBarWidth = displayProjectedScore != null ? Math.min(barWidth, Math.round(displayProjectedScore / 100 * barWidth)) : filledBarWidth;
+	const projectedGainWidth = Math.max(0, projectedBarWidth - filledBarWidth);
+	const emptyBarWidth = Math.max(0, barWidth - filledBarWidth - projectedGainWidth);
+	const [eyes, mouth] = doctorFace(score.score);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		width: availableWidth,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+			paddingLeft: 2,
+			width: availableWidth,
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box, {
+				flexDirection: "column",
+				flexShrink: 0,
+				width: 7,
+				marginRight: 2,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					color: scoreColor,
+					children: `┌─────┐\n│ ${eyes} │\n│ ${mouth} │\n└─────┘`
+				})
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+				flexDirection: "column",
+				width: availableWidth - 11,
+				children: [
+					scoreSummaryLine,
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						wrap: "truncate-end",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								color: scoreColor,
+								children: "█".repeat(filledBarWidth)
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								color: scoreColor,
+								dimColor: true,
+								children: "▓".repeat(projectedGainWidth)
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+								dimColor: true,
+								children: "░".repeat(emptyBarWidth)
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						wrap: "truncate-end",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReactDoctorLink, {})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " })
+				]
+			})]
+		}), variant === "landing" && projectedScore != null && projectedScore > score.score ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			wrap: "truncate-end",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: "  Potential score "
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					color: scoreColorName(projectedScore),
+					children: projectedScore
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					dimColor: true,
+					children: " after priority fixes "
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					color: scoreColorName(projectedScore),
+					children: ["+", projectedScore - score.score]
+				})
+			]
+		}) : null]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/report.tsx
+const EMPTY_LAUNCHABLE_AGENTS = [];
+const recordReportAction = (action) => {
+	recordCount(METRIC.tuiReportActionSelected, 1, { action });
+};
+const completeReportOnboarding = () => {
+	if (shouldRecordOnboarding({
+		paceOnboardingSections: true,
+		forceOnboarding: isOnboardingForced(),
+		verbose: false,
+		isNonInteractiveEnvironment: false
+	})) markOnboardingComplete();
+};
+const Report = ({ report, onExit, onQuit = onExit, launchableAgents = EMPTY_LAUNCHABLE_AGENTS, onHandoff, canAddToCi, onAddToCi, projectCount, priorityScores, exitHint = "q to quit" }) => {
+	const { rows: terminalRows, columns } = useStdoutDimensions();
+	const diagnosticRows = (0, import_react.useMemo)(() => buildDiagnosticRows(report.diagnostics, priorityScores ?? [report.score]), [
+		report.diagnostics,
+		report.score,
+		priorityScores
+	]);
+	const diagnosticListEntries = (0, import_react.useMemo)(() => buildDiagnosticListEntries(diagnosticRows), [diagnosticRows]);
+	const reportLayout = resolveReportLayout({
+		columns,
+		diagnosticEntryCount: diagnosticListEntries.length,
+		terminalRows
+	});
+	const reportReveal = useReportReveal({
+		issueCount: diagnosticRows.length,
+		onRevealComplete: completeReportOnboarding
+	});
+	const [activeReportScreen, setActiveReportScreen] = (0, import_react.useState)("landing");
+	const [ciSetupFeedback, setCiSetupFeedback] = (0, import_react.useState)();
+	const [landingSelectedIndex, setLandingSelectedIndex] = (0, import_react.useState)(0);
+	const [viewerSelectedRowIndex, setViewerSelectedRowIndex] = (0, import_react.useState)(null);
+	const [viewerReadRuleKeys, setViewerReadRuleKeys] = (0, import_react.useState)(() => /* @__PURE__ */ new Set());
+	const [isCiSetupQueued, setIsCiSetupQueued] = (0, import_react.useState)(false);
+	const [shouldShowIssueStream, setShouldShowIssueStream] = (0, import_react.useState)(true);
+	const didRecordCompactReport = (0, import_react.useRef)(false);
+	const didRecordIssueStream = (0, import_react.useRef)(false);
+	const didRecordStackedReportCap = (0, import_react.useRef)(false);
+	const isCompact = reportLayout.layout === "compact";
+	const isWide = reportLayout.layout === "split";
+	(0, import_react.useEffect)(() => {
+		if (!isCompact || didRecordCompactReport.current) return;
+		didRecordCompactReport.current = true;
+		recordCount(METRIC.tuiCompactReportShown);
+	}, [isCompact]);
+	(0, import_react.useEffect)(() => {
+		if (!reportLayout.isStackedReportCapped || didRecordStackedReportCap.current) return;
+		didRecordStackedReportCap.current = true;
+		recordCount(METRIC.tuiStackedReportCapped);
+	}, [reportLayout.isStackedReportCapped]);
+	(0, import_react.useEffect)(() => {
+		if (reportReveal.phase !== "streaming" || didRecordIssueStream.current) return;
+		didRecordIssueStream.current = true;
+		recordCount(METRIC.tuiIssueStreamShown);
+	}, [reportReveal.phase]);
+	const scoreHeaderProps = {
+		score: report.score,
+		projectedScore: report.projectedScore,
+		projectName: report.projectName,
+		issueCount: report.diagnostics.length,
+		noScoreMessage: report.noScoreMessage,
+		width: isWide ? reportLayout.listColumnWidth : reportLayout.width
+	};
+	const isCiSetupAvailable = Boolean(canAddToCi && onAddToCi && !isCiSetupQueued);
+	const isHandoffAvailable = diagnosticRows.length > 0 && Boolean(onHandoff);
+	const completeHandoff = (destination) => {
+		if (!onHandoff) return;
+		onHandoff({
+			destination,
+			prompt: buildHandoffPayload({
+				diagnostics: report.diagnostics,
+				projectName: report.projectName
+			})
+		});
+		onExit();
+	};
+	const firstDiagnosticEntry = diagnosticListEntries.find((entry) => entry.kind === "item");
+	const resolvedViewerSelectedRowIndex = viewerSelectedRowIndex ?? (firstDiagnosticEntry?.kind === "item" ? firstDiagnosticEntry.rowIndex : null);
+	const markViewerRuleRead = (index) => {
+		const ruleKey = diagnosticRows[index]?.ruleKey;
+		if (!ruleKey) return;
+		setViewerReadRuleKeys((previous) => previous.has(ruleKey) ? previous : new Set(previous).add(ruleKey));
+	};
+	const handleViewerSelectionChange = (index) => {
+		setViewerSelectedRowIndex(index);
+		markViewerRuleRead(index);
+	};
+	const openReportScreen = (nextScreen) => {
+		setShouldShowIssueStream(false);
+		setCiSetupFeedback(void 0);
+		setActiveReportScreen(nextScreen);
+	};
+	const landingActions = [];
+	if (report.diagnostics.length > 0) landingActions.push({
+		id: "view-issues",
+		label: `Review ${pluralize(diagnosticRows.length, "issue")}`,
+		onSelect: () => {
+			recordReportAction("view-issues");
+			if (resolvedViewerSelectedRowIndex !== null) {
+				setViewerSelectedRowIndex(resolvedViewerSelectedRowIndex);
+				markViewerRuleRead(resolvedViewerSelectedRowIndex);
+			}
+			openReportScreen("issues");
+		}
+	});
+	if (isCiSetupAvailable) landingActions.push({
+		id: "add-to-ci",
+		label: "Add to GitHub Actions (Recommended)",
+		description: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CiJustification, {}),
+		onSelect: () => {
+			recordReportAction("add-to-ci");
+			openReportScreen("ci");
+		}
+	});
+	if (isHandoffAvailable) landingActions.push({
+		id: "handoff",
+		label: "Hand off to an agent",
+		onSelect: () => {
+			recordReportAction("handoff");
+			openReportScreen(isCiSetupAvailable ? "handoff-ci" : "handoff");
+		}
+	});
+	const postReviewLandingActionIndex = landingActions.findIndex((action) => action.id !== "view-issues");
+	const resolvedLandingSelectedIndex = Math.min(landingSelectedIndex, Math.max(0, landingActions.length - 1));
+	const issueStream = reportReveal.phase === "streaming" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReportIssueStream, {
+		rows: diagnosticRows,
+		selectedIndex: reportReveal.streamSelectedIndex,
+		width: reportLayout.width
+	}) : null;
+	const screenContent = {
+		ci: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CiSetup, {
+			feedback: ciSetupFeedback,
+			onConfirm: () => {
+				onAddToCi?.();
+				onExit();
+			},
+			onLearnMore: () => {
+				recordReportAction("ci-learn-more");
+				openUrl(GITHUB_ACTIONS_SETUP_URL).then((didOpen) => {
+					setCiSetupFeedback({
+						didSucceed: didOpen,
+						message: didOpen ? "✓ Opened the GitHub Actions guide in your browser" : `Couldn't open a browser. Visit ${GITHUB_ACTIONS_SETUP_URL}`
+					});
+				});
+			},
+			onBack: () => {
+				setCiSetupFeedback(void 0);
+				setActiveReportScreen("landing");
+			},
+			onQuit
+		}),
+		handoff: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentHandoff, {
+			agents: launchableAgents,
+			onSelect: completeHandoff,
+			onCopyPrompt: () => completeHandoff("clipboard"),
+			onBack: () => setActiveReportScreen("landing"),
+			onQuit
+		}),
+		"handoff-ci": /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HandoffCiRecommendation, {
+			onAddToCi: () => {
+				onAddToCi?.();
+				setIsCiSetupQueued(true);
+				setActiveReportScreen("handoff");
+			},
+			onContinue: () => setActiveReportScreen("handoff"),
+			onQuit
+		}),
+		landing: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReportLanding, {
+			header: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScoreHeader, {
+				variant: "landing",
+				...scoreHeaderProps
+			}),
+			phase: reportReveal.phase,
+			issueCount: report.diagnostics.length,
+			emptyStateMessage: report.emptyStateMessage,
+			lintFailureReason: report.lintFailureReason,
+			skippedChecks: report.skippedChecks,
+			incompleteMessage: report.incompleteMessage,
+			actions: landingActions,
+			selectedIndex: resolvedLandingSelectedIndex,
+			onSelectionChange: setLandingSelectedIndex,
+			onQuit
+		}),
+		issues: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiagnosticList, {
+			header: reportLayout.showsViewerScoreHeader ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScoreHeader, {
+				variant: "viewer",
+				...scoreHeaderProps
+			}) : null,
+			rows: diagnosticRows,
+			entries: diagnosticListEntries,
+			width: reportLayout.width,
+			listColumnWidth: reportLayout.listColumnWidth,
+			detailColumnWidth: reportLayout.detailColumnWidth,
+			listHeight: reportLayout.listHeight,
+			detailHeight: reportLayout.detailHeight,
+			layout: reportLayout.layout,
+			rootDirectory: report.rootDirectory,
+			projectName: report.projectName,
+			projectCount,
+			initialSelectedRowIndex: resolvedViewerSelectedRowIndex,
+			readRuleKeys: viewerReadRuleKeys,
+			onSelectedRowIndexChange: handleViewerSelectionChange,
+			onQuit,
+			onBack: () => {
+				setLandingSelectedIndex(Math.max(0, postReviewLandingActionIndex));
+				setActiveReportScreen("landing");
+			},
+			exitHint: `esc back · ${exitHint}`
+		})
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [activeReportScreen === "landing" && shouldShowIssueStream ? issueStream : null, screenContent[activeReportScreen]] });
+};
+//#endregion
+//#region src/cli/ink/components/scanning.tsx
+const Scanning = ({ progressText, recent }) => {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box, {
+		flexDirection: "column",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			wrap: "truncate-end",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				color: "cyan",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { type: "dots" })
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [" ", progressText ?? "Scanning…"] })]
+		}), recent.map((diagnostic, diagnosticIndex) => {
+			const variant = severityVariant(diagnostic.severity === "error" ? "error" : "warning");
+			const location = formatDiagnosticSite(diagnostic);
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				wrap: "truncate-end",
+				children: [
+					"  ",
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						color: variant.color,
+						children: variant.icon
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [" ", diagnostic.title ?? `${diagnostic.plugin}/${diagnostic.rule}`] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						dimColor: true,
+						children: ["  ", location]
+					})
+				]
+			}, `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}:${diagnostic.plugin}:${diagnostic.rule}:${diagnosticIndex}`);
+		})]
+	});
+};
+//#endregion
+//#region src/cli/ink/components/summary.tsx
+const Summary = ({ summary, onExit, onQuit, launchableAgents, onHandoff, canAddToCi, onAddToCi }) => {
+	const skippedProjects = summary.skippedProjects ?? [];
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Report, {
+		report: {
+			diagnostics: summary.combinedDiagnostics,
+			score: summary.aggregateScore,
+			projectedScore: summary.projectedScore,
+			projectName: summary.projectName,
+			rootDirectory: summary.rootDirectory,
+			scannedFileCount: summary.scannedFileCount,
+			elapsedMilliseconds: summary.elapsedMilliseconds,
+			isOffline: summary.isOffline,
+			noScoreMessage: summary.noScoreMessage,
+			skippedChecks: [...new Set(summary.projects.flatMap((project) => project.skippedChecks ?? []))],
+			...skippedProjects.length > 0 ? { incompleteMessage: formatSkippedProjectsMessage(skippedProjects.length) } : {},
+			...summary.emptyStateMessage ? { emptyStateMessage: summary.emptyStateMessage } : {},
+			...summary.lintFailureReason ? { lintFailureReason: summary.lintFailureReason } : {}
+		},
+		onExit,
+		onQuit,
+		launchableAgents,
+		onHandoff,
+		canAddToCi,
+		onAddToCi,
+		projectCount: summary.projects.length + skippedProjects.length,
+		priorityScores: summary.projects.map((project) => project.score)
+	});
+};
+//#endregion
+//#region src/cli/ink/hooks/use-scan-store.ts
+const useScanStore = (store) => (0, import_react.useSyncExternalStore)(store.subscribe, store.getSnapshot, store.getSnapshot);
+//#endregion
+//#region src/cli/ink/scan-app.tsx
+const ScanApp = ({ store, displayMode = "report", launchableAgents, onHandoff, canAddToCi, onAddToCi, onQuit }) => {
+	const snapshot = useScanStore(store);
+	const { exit } = useApp();
+	useExitOnCtrlC(onQuit);
+	const handleQuit = () => {
+		onQuit?.();
+		exit();
+	};
+	if (displayMode === "report" && snapshot.phase === "summary") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Summary, {
+		summary: snapshot.summary,
+		launchableAgents,
+		onHandoff,
+		canAddToCi,
+		onAddToCi,
+		onExit: exit,
+		onQuit: handleQuit
+	});
+	if (displayMode === "report" && snapshot.phase === "report") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Report, {
+		report: snapshot.report,
+		launchableAgents,
+		onHandoff,
+		canAddToCi,
+		onAddToCi,
+		onExit: exit,
+		onQuit: handleQuit
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Scanning, {
+		progressText: snapshot.progress,
+		recent: snapshot.liveDiagnostics.slice(-5)
+	});
+};
+//#endregion
+//#region src/cli/ink/scan-bridge-layers.ts
+const reporterLayerForStore = (store) => succeed(Reporter, Reporter.of({
+	emit: (diagnostic) => sync(() => store.emitDiagnostic(diagnostic)),
+	finalize: void_
+}));
+const progressHandleForStore = (store, options = {}) => (text) => {
+	const transformText = options.transformText ?? ((displayText) => displayText);
+	store.setProgress(transformText(text));
+	return {
+		update: (displayText) => sync(() => store.scheduleProgress(transformText(displayText))),
+		succeed: (displayText) => sync(() => store.setProgress(transformText(displayText))),
+		fail: (displayText) => sync(() => store.setProgress(transformText(displayText))),
+		stop: () => sync(() => store.setProgress(options.shouldClearOnStop === false ? transformText(text) : null))
+	};
+};
+const progressLayerForStore = (store, options = {}) => Progress.layerOra(progressHandleForStore(store, options));
+//#endregion
+//#region src/cli/ink/scan-store.ts
+const INITIAL_SNAPSHOT = {
+	phase: "scanning",
+	liveDiagnostics: [],
+	progress: null
+};
+const createScanStore = () => {
+	let snapshot = INITIAL_SNAPSHOT;
+	const listeners = /* @__PURE__ */ new Set();
+	let pendingProgress = null;
+	let progressTimer = null;
+	const commit = (next) => {
+		snapshot = next;
+		for (const listener of [...listeners]) listener();
+	};
+	const cancelPendingProgress = () => {
+		pendingProgress = null;
+		if (progressTimer === null) return;
+		clearTimeout(progressTimer);
+		progressTimer = null;
+	};
+	const setProgress = (progress) => {
+		cancelPendingProgress();
+		commit({
+			...snapshot,
+			progress
+		});
+	};
+	return {
+		subscribe: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		getSnapshot: () => snapshot,
+		emitDiagnostic: (diagnostic) => commit({
+			...snapshot,
+			liveDiagnostics: [...snapshot.liveDiagnostics, diagnostic].slice(-25)
+		}),
+		scheduleProgress: (progress) => {
+			pendingProgress = progress;
+			if (progressTimer !== null) return;
+			progressTimer = setTimeout(() => {
+				progressTimer = null;
+				const progressToCommit = pendingProgress;
+				pendingProgress = null;
+				if (progressToCommit !== null) commit({
+					...snapshot,
+					progress: progressToCommit
+				});
+			}, 250);
+			progressTimer.unref?.();
+		},
+		setProgress,
+		setReport: (report) => {
+			cancelPendingProgress();
+			commit({
+				phase: "report",
+				liveDiagnostics: snapshot.liveDiagnostics,
+				progress: snapshot.progress,
+				report
+			});
+		},
+		setSummary: (summary) => {
+			cancelPendingProgress();
+			commit({
+				phase: "summary",
+				liveDiagnostics: snapshot.liveDiagnostics,
+				progress: snapshot.progress,
+				summary
+			});
+		}
+	};
+};
+//#endregion
+//#region src/cli/ink/run-scan-app.tsx
+const qualifyDiagnosticPaths = (diagnostics, rootDirectory, projectDirectory) => {
+	const prefix = path.relative(rootDirectory, projectDirectory);
+	if (prefix === "" || prefix.startsWith("..")) return [...diagnostics];
+	return diagnostics.map((diagnostic) => path.isAbsolute(diagnostic.filePath) ? diagnostic : {
+		...diagnostic,
+		filePath: toForwardSlashes(path.join(prefix, diagnostic.filePath))
+	});
+};
+const resolveScanPresentation = (input, projectScans, rootDirectory) => {
+	const isScoreDisabled = input.options?.noScore === true || projectScans.some((projectScan) => projectScan.config?.noScore === true);
+	return {
+		isOffline: isCiEnvironment() || input.share === false || isShareOptedOut(projectScans, input.options?.noScore),
+		initialProgress: projectScans.length > 1 ? "Indexing workspace files…" : "Scanning project…",
+		noScoreMessage: buildNoScoreMessage({ isScoreDisabled }),
+		outputDirectory: input.options?.outputDirectory,
+		shouldRecommendCi: isCiUnconfigured(rootDirectory),
+		verbose: input.options?.verbose === true
+	};
+};
+const resolveTuiInspectOptions = (input, config) => {
+	const warnings = resolveCliInspectOptions({
+		blocking: input.blocking,
+		warnings: input.options?.warnings
+	}, config).warnings;
+	return warnings === void 0 ? { ...input.options } : {
+		...input.options,
+		warnings
+	};
+};
+const resolveProjectSelection = async (rootDirectory, input) => {
+	const packages = discoverWorkspacePackages(rootDirectory);
+	const workspaceProjectDirectories = packages.map((workspacePackage) => workspacePackage.directory);
+	return {
+		selectedDirectories: packages.length > 1 && !input.projectFlag && !input.skipPrompts && (input.configProjects ?? []).length === 0 && process.stdin.isTTY === true ? await promptProjectSelection(packages, rootDirectory) : await selectProjects(rootDirectory, input.projectFlag, input.skipPrompts ?? false, input.configProjects),
+		workspaceProjectDirectories
+	};
+};
+const promptProjectSelection = (packages, rootDirectory) => new Promise((resolve) => {
+	let disposeRenderer = () => {};
+	recordCount(METRIC.tuiProjectSelectShown);
+	disposeRenderer = registerMountedTuiRenderer(render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProjectSelect, {
+		packages,
+		rootDirectory,
+		onSubmit: (directories) => {
+			disposeRenderer();
+			resolve(directories);
+		}
+	}), {
+		alternateScreen: true,
+		exitOnCtrlC: false
+	}));
+});
+const resolveLintFailureReason = (results) => {
+	for (const result of results) {
+		if (!hasLintHardFailure(result)) continue;
+		return result.skippedCheckReasons?.lint ?? "Lint failed before diagnostics were produced.";
+	}
+	return null;
+};
+const toScanReport = ({ result, diagnostics, rootDirectory, projectedScore, isOffline, noScoreMessage, emptyStateMessage }) => {
+	const lintFailureReason = resolveLintFailureReason([result]);
+	return {
+		diagnostics: diagnostics ?? result.diagnostics,
+		score: result.score,
+		projectedScore,
+		projectName: result.project.projectName,
+		rootDirectory,
+		scannedFileCount: result.scannedFileCount ?? 0,
+		elapsedMilliseconds: result.elapsedMilliseconds,
+		isOffline,
+		noScoreMessage,
+		emptyStateMessage,
+		skippedChecks: result.skippedChecks,
+		...lintFailureReason ? { lintFailureReason } : {}
+	};
+};
+const findLowestScoredReport = (reports) => {
+	let lowestScoredReport = null;
+	for (const report of reports) {
+		if (report.score === null) continue;
+		if (lowestScoredReport === null || report.score.score < lowestScoredReport.score.score) lowestScoredReport = {
+			score: report.score,
+			scoreDiagnostics: report.scoreDiagnostics
+		};
+	}
+	return lowestScoredReport;
+};
+const resolveEmptyStateMessage = (input, demotedDiagnosticCount) => buildEmptyReportMessage({
+	categoryFilters: input.options?.categoryFilters ?? [],
+	demotedDiagnosticCount,
+	outputSurface: input.options?.outputSurface ?? "cli"
+});
+const printExitFooter = async (input) => {
+	process.stdout.write(`${highlighter.success("✔")} Scanned ${pluralize(input.scannedFileCount, "file")} in ${formatElapsedTime(input.elapsedMilliseconds)}\n`);
+	if (input.lintFailureReason !== null) process.stdout.write(`${highlighter.warn("⚠")} Lint did not run: ${input.lintFailureReason}\n`);
+	await runPromise(printFooter({
+		diagnostics: [...input.diagnostics],
+		scoreResult: input.scoreResult,
+		projectName: input.projectName,
+		isOffline: input.isOffline
+	}));
+};
+const performTuiHandoff = async (request, rootDirectory) => {
+	let failureMessage = null;
+	if (request.destination === "clipboard") {
+		const didCopy = await copyToClipboard(request.prompt);
+		recordCount(METRIC.agentHandoff, 1, {
+			outcome: "clipboard",
+			source: "tui",
+			copied: didCopy
+		});
+		if (didCopy) {
+			process.stdout.write(`${highlighter.success("✔")} Copied the prompt to your clipboard.\n`);
+			return;
+		}
+		failureMessage = "Couldn't access the clipboard. Here's the prompt instead:";
+	} else try {
+		await launchCliAgent(request.destination, request.prompt, rootDirectory);
+		return;
+	} catch {
+		failureMessage = `Couldn't launch ${CLI_AGENT_BINARIES[request.destination]}. Here's the prompt instead:`;
+	}
+	process.stdout.write(`${highlighter.warn("⚠")} ${failureMessage}\n`);
+	process.stdout.write(`${highlighter.dim("──── Agent prompt ────")}\n`);
+	process.stdout.write(`${request.prompt}\n`);
+	process.stdout.write(`${highlighter.dim("──────────────────────")}\n`);
+};
+const isCiUnconfigured = (directory) => !isReactDoctorWorkflowInstalled(findNearestPackageDirectory(directory) ?? directory);
+const performCiSetup = async (rootDirectory) => {
+	const didCreateWorkflow = await setUpGitHubActions({ rootDirectory });
+	recordCount(METRIC.agentHandoff, 1, {
+		outcome: "ci-yes",
+		source: "tui",
+		created: didCreateWorkflow
+	});
+};
+const mountScanApp = async (rootDirectory, shouldRecommendCi, initialProgress) => {
+	const store = createScanStore();
+	store.setProgress(initialProgress);
+	const launchableAgents = await detectLaunchableAgents();
+	const pendingActions = {
+		handoffRequest: null,
+		shouldSetUpCi: false,
+		didQuit: false
+	};
+	const mountRenderer = (displayMode) => {
+		const instance = render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScanApp, {
+			store,
+			displayMode,
+			launchableAgents,
+			onHandoff: (request) => {
+				pendingActions.handoffRequest = request;
+			},
+			canAddToCi: shouldRecommendCi,
+			onAddToCi: () => {
+				pendingActions.shouldSetUpCi = true;
+			},
+			onQuit: () => {
+				pendingActions.didQuit = true;
+			}
+		}), {
+			alternateScreen: false,
+			exitOnCtrlC: false
+		});
+		return {
+			instance,
+			dispose: registerMountedTuiRenderer(instance)
+		};
+	};
+	const executePendingActions = async () => {
+		if (pendingActions.shouldSetUpCi) await performCiSetup(rootDirectory);
+		if (pendingActions.didQuit) return;
+		if (pendingActions.handoffRequest) await performTuiHandoff(pendingActions.handoffRequest, rootDirectory);
+	};
+	return {
+		store,
+		pendingActions,
+		mountRenderer,
+		executePendingActions
+	};
+};
+const runMountedScan = async (rootDirectory, presentation, gateOptions, executeScan) => {
+	const { store, pendingActions, mountRenderer, executePendingActions } = await mountScanApp(rootDirectory, presentation.shouldRecommendCi, presentation.initialProgress);
+	let mountedRenderer = mountRenderer("scan");
+	recordCount(METRIC.tuiScanInlineShown);
+	const context = {
+		store,
+		...presentation
+	};
+	try {
+		const completedScan = await executeScan(context);
+		mountedRenderer.dispose();
+		mountedRenderer = mountRenderer("report");
+		if (presentation.shouldRecommendCi) recordCount(METRIC.tuiCiRecommendationShown);
+		await mountedRenderer.instance.waitUntilExit();
+		mountedRenderer.dispose();
+		if (presentation.outputDirectory !== void 0 || presentation.verbose) await runPromise(printDiagnosticsDump([...completedScan.diagnostics], presentation.outputDirectory, presentation.verbose));
+		if (!pendingActions.didQuit) await printExitFooter({
+			diagnostics: completedScan.diagnostics,
+			scoreResult: completedScan.scoreResult,
+			projectName: completedScan.projectName,
+			scannedFileCount: completedScan.scannedFileCount,
+			elapsedMilliseconds: completedScan.elapsedMilliseconds,
+			isOffline: context.isOffline,
+			lintFailureReason: resolveLintFailureReason(completedScan.scans.map(({ result }) => result))
+		});
+		await executePendingActions();
+		return { exitCode: resolveScanExitCode({
+			...gateOptions,
+			scans: completedScan.scans,
+			diagnosticsAreGateExempt: completedScan.diagnosticsAreGateExempt
+		}) };
+	} catch (error) {
+		mountedRenderer.dispose();
+		throw error;
+	}
+};
+const runSingleProjectScan = async (rootScanTarget, projectDirectory, workspaceProjectDirectories, input, scopePlan, blockingLevel, inspectProject) => {
+	const projectScan = await resolveProjectScan(rootScanTarget, projectDirectory);
+	const isRootProject = path.resolve(projectScan.directory) === path.resolve(rootScanTarget.resolvedDirectory);
+	const isSupplyChainEnabled = input.options?.supplyChain ?? projectScan.config?.supplyChain?.enabled ?? true;
+	const scopeOptions = resolveProjectTuiScanScope({
+		plan: scopePlan,
+		projectDirectory: projectScan.directory,
+		rootDirectory: rootScanTarget.resolvedDirectory,
+		supplyChainEnabled: isSupplyChainEnabled
+	});
+	if (scopeOptions === null) {
+		process.stdout.write("No changed source files in the selected project.\n");
+		return { exitCode: 0 };
+	}
+	const presentation = resolveScanPresentation(input, [projectScan], rootScanTarget.resolvedDirectory);
+	const gateOptions = {
+		blockingLevel,
+		warningExitCode: input.warningExitCode
+	};
+	return runMountedScan(projectScan.directory, presentation, gateOptions, async (context) => {
+		const result = await inspectProject(projectScan.directory, {
+			...resolveTuiInspectOptions(input, projectScan.config),
+			...scopeOptions,
+			isCi: isCiEnvironment(),
+			configOverride: projectScan.config,
+			configSourceDirectory: projectScan.configSourceDirectory ?? void 0,
+			uiLayers: {
+				reporter: reporterLayerForStore(context.store),
+				progress: progressLayerForStore(context.store)
+			},
+			excludedProjectDirectories: resolveExcludedProjectDirectories(projectScan.directory, workspaceProjectDirectories),
+			retainExcludedProjectDeadCodeDiagnostics: isRootProject
+		});
+		const reportSelection = selectReportDiagnostics({
+			scan: {
+				result,
+				config: projectScan.config
+			},
+			categoryFilters: input.options?.categoryFilters,
+			surface: input.options?.outputSurface
+		});
+		const scoreDiagnostics = filterScansForSurface([{
+			result,
+			config: projectScan.config
+		}], "score");
+		const projectedScore = result.score ? await computeProjectedScore([...reportSelection.diagnostics], scoreDiagnostics, result.score) : null;
+		context.store.setReport(toScanReport({
+			result,
+			diagnostics: reportSelection.diagnostics,
+			rootDirectory: projectScan.directory,
+			projectedScore,
+			isOffline: context.isOffline,
+			noScoreMessage: buildNoScoreMessage({
+				isScoreDisabled: input.options?.noScore === true || projectScan.config?.noScore === true,
+				isAnalysisIncomplete: hasIncompleteScoreAnalysis(result.skippedChecks),
+				disabledMessage: input.options?.scoreDisabledMessage
+			}),
+			emptyStateMessage: resolveEmptyStateMessage(input, reportSelection.demotedDiagnosticCount)
+		}));
+		return {
+			scans: [{
+				result,
+				config: projectScan.config
+			}],
+			diagnostics: reportSelection.diagnostics,
+			diagnosticsAreGateExempt: scopePlan.baselineIntended && result.baselineDelta === void 0,
+			scoreResult: result.score,
+			projectName: result.project.projectName,
+			scannedFileCount: result.scannedFileCount ?? 0,
+			elapsedMilliseconds: result.elapsedMilliseconds
+		};
+	});
+};
+const runMultiProjectScan = async (rootScanTarget, directories, workspaceProjectDirectories, input, scopePlan, blockingLevel, inspectProject) => {
+	const feedbackStartTime = performance.now();
+	const rootDirectory = rootScanTarget.resolvedDirectory;
+	const discoveredProjectScans = deduplicateProjectScans(await mapWithConcurrency([...directories], 4, (projectDirectory) => resolveProjectScan(rootScanTarget, projectDirectory)));
+	const projectScans = discoveredProjectScans.flatMap((projectScan) => {
+		const isSupplyChainEnabled = input.options?.supplyChain ?? projectScan.config?.supplyChain?.enabled ?? true;
+		const scopeOptions = resolveProjectTuiScanScope({
+			plan: scopePlan,
+			projectDirectory: projectScan.directory,
+			rootDirectory,
+			supplyChainEnabled: isSupplyChainEnabled
+		});
+		return scopeOptions === null ? [] : [{
+			projectScan,
+			scopeOptions
+		}];
+	});
+	if (projectScans.length === 0) {
+		process.stdout.write("No changed source files in the selected projects.\n");
+		return { exitCode: 0 };
+	}
+	const projectCount = projectScans.length;
+	const rootProjectScan = discoveredProjectScans.find((projectScan) => path.resolve(projectScan.directory) === path.resolve(rootDirectory));
+	const workspaceDeadCodeOwner = resolveWorkspaceDeadCodeOwner({
+		rootDirectory,
+		projectDirectories: discoveredProjectScans.map((projectScan) => projectScan.directory),
+		isRootDeadCodeEnabled: input.options?.deadCode ?? rootProjectScan?.config?.deadCode ?? true
+	});
+	if (workspaceDeadCodeOwner !== null) recordCount(METRIC.scanWorkspaceMaintainabilityShared, 1, { projectCount: discoveredProjectScans.length });
+	return runMountedScan(rootDirectory, resolveScanPresentation(input, projectScans.map(({ projectScan }) => projectScan), rootDirectory), {
+		blockingLevel,
+		warningExitCode: input.warningExitCode
+	}, async (context) => {
+		const startTime = performance.now();
+		let finishedCount = 0;
+		recordDistribution(METRIC.scanFeedbackDelay, performance.now() - feedbackStartTime, {
+			unit: "millisecond",
+			attributes: {
+				surface: "tui",
+				projectCount
+			}
+		});
+		context.store.setProgress(`Scanning ${projectCount} projects…`);
+		await yieldToEventLoop();
+		const precomputedSourceFiles = scopePlan.scope === "full" ? await collectProjectSourceFiles(rootDirectory, projectScans.map(({ projectScan }) => projectScan.directory)) : null;
+		const { completedScans, skippedScans } = partitionProjectScanOutcomes(await mapWithConcurrency(projectScans, 4, async ({ projectScan, scopeOptions }) => {
+			if (input.options?.deadlineEpochMs !== void 0 && remainingDeadlineBudgetMs(input.options.deadlineEpochMs) === 0) {
+				finishedCount += 1;
+				context.store.setProgress(`Scanning ${projectCount} projects… (${finishedCount}/${projectCount})`);
+				return {
+					status: "skipped",
+					value: {
+						directory: projectScan.directory,
+						reason: "max-duration"
+					}
+				};
+			}
+			const projectLabel = path.relative(rootDirectory, projectScan.directory) || path.basename(rootDirectory);
+			const formatProjectProgress = (displayText) => `Scanning ${projectCount} projects… (${finishedCount}/${projectCount}) · ${projectLabel}: ${displayText}`;
+			const inspectOptions = resolveTuiInspectOptions(input, projectScan.config);
+			const ownsWorkspaceDeadCode = projectScan.directory === workspaceDeadCodeOwner;
+			const result = await inspectProject(projectScan.directory, {
+				...inspectOptions,
+				...scopeOptions,
+				deadCode: workspaceDeadCodeOwner === null ? inspectOptions.deadCode : ownsWorkspaceDeadCode,
+				isCi: isCiEnvironment(),
+				configOverride: projectScan.config,
+				configSourceDirectory: projectScan.configSourceDirectory ?? void 0,
+				precomputedSourceFiles: precomputedSourceFiles?.get(projectScan.directory),
+				uiLayers: {
+					reporter: Reporter.layerNoop,
+					progress: progressLayerForStore(context.store, {
+						transformText: formatProjectProgress,
+						shouldClearOnStop: false
+					})
+				},
+				concurrentScan: true,
+				excludedProjectDirectories: resolveExcludedProjectDirectories(projectScan.directory, [...discoveredProjectScans.map((candidateProjectScan) => candidateProjectScan.directory), ...workspaceProjectDirectories]),
+				retainExcludedProjectDeadCodeDiagnostics: ownsWorkspaceDeadCode
+			});
+			finishedCount += 1;
+			context.store.setProgress(`Scanning ${projectCount} projects… (${finishedCount}/${projectCount})`);
+			await yieldToEventLoop();
+			return {
+				status: "completed",
+				value: {
+					directory: projectScan.directory,
+					result,
+					config: projectScan.config
+				}
+			};
+		}));
+		const results = await retryMissingProjectScores(completedScans.map((completedScan) => ({
+			...completedScan,
+			isScoreDisabled: input.options?.noScore ?? completedScan.config?.noScore ?? false
+		})));
+		const skippedProjects = skippedScans.sort((left, right) => left.directory.localeCompare(right.directory));
+		if (skippedProjects.length > 0) recordCount(METRIC.scanProjectSkipped, skippedProjects.length, { reason: "max-duration" });
+		const projectEntries = results.map(({ directory, result, config }) => {
+			const reportSelection = selectReportDiagnostics({
+				scan: {
+					result,
+					config
+				},
+				categoryFilters: input.options?.categoryFilters,
+				surface: input.options?.outputSurface
+			});
+			return {
+				report: toScanReport({
+					result,
+					diagnostics: reportSelection.diagnostics,
+					rootDirectory: directory,
+					projectedScore: null,
+					isOffline: context.isOffline,
+					noScoreMessage: buildNoScoreMessage({
+						isScoreDisabled: input.options?.noScore === true || config?.noScore === true,
+						isAnalysisIncomplete: hasIncompleteScoreAnalysis(result.skippedChecks),
+						disabledMessage: input.options?.scoreDisabledMessage
+					}),
+					emptyStateMessage: resolveEmptyStateMessage(input, reportSelection.demotedDiagnosticCount)
+				}),
+				score: result.score,
+				scoreDiagnostics: filterScansForSurface([{
+					result,
+					config
+				}], "score"),
+				demotedDiagnosticCount: reportSelection.demotedDiagnosticCount
+			};
+		});
+		const projects = projectEntries.map(({ report }) => report);
+		const combinedDiagnostics = projects.flatMap((project) => qualifyDiagnosticPaths(project.diagnostics, rootDirectory, project.rootDirectory));
+		const lowestScoredReport = findLowestScoredReport(projectEntries);
+		const projectedScore = lowestScoredReport ? await computeProjectedScore(combinedDiagnostics, [...lowestScoredReport.scoreDiagnostics], lowestScoredReport.score) : null;
+		const scannedFileCount = countUniqueScannedFiles(results.map(({ result }) => result));
+		const elapsedMilliseconds = performance.now() - startTime;
+		const lintFailureReason = resolveLintFailureReason(results.map(({ result }) => result));
+		const summary = {
+			projects,
+			skippedProjects,
+			aggregateScore: lowestScoredReport?.score ?? null,
+			projectedScore,
+			combinedDiagnostics,
+			scannedFileCount,
+			elapsedMilliseconds,
+			projectName: path.basename(rootDirectory),
+			rootDirectory,
+			isOffline: context.isOffline,
+			noScoreMessage: buildNoScoreMessage({
+				isScoreDisabled: input.options?.noScore === true || results.some(({ config }) => config?.noScore === true),
+				isAnalysisIncomplete: results.some(({ result }) => hasIncompleteScoreAnalysis(result.skippedChecks)),
+				disabledMessage: input.options?.scoreDisabledMessage
+			}),
+			emptyStateMessage: resolveEmptyStateMessage(input, projectEntries.reduce((total, projectEntry) => total + projectEntry.demotedDiagnosticCount, 0)),
+			...lintFailureReason ? { lintFailureReason } : {}
+		};
+		context.store.setSummary(summary);
+		return {
+			scans: results,
+			diagnostics: combinedDiagnostics,
+			diagnosticsAreGateExempt: scopePlan.baselineIntended && (skippedProjects.length > 0 || results.length === 0 || results.some(({ result }) => result.baselineDelta === void 0)),
+			scoreResult: summary.aggregateScore,
+			projectName: summary.projectName,
+			scannedFileCount,
+			elapsedMilliseconds
+		};
+	});
+};
+const runScanApp = async (input) => {
+	const scanTarget = input.scanTarget ?? await resolveScanTarget(input.directory, { allowAmbiguous: true });
+	const rootDirectory = scanTarget.resolvedDirectory;
+	const scopePlan = await resolveTuiScanScope({
+		directory: rootDirectory,
+		flags: input.flags ?? {},
+		userConfig: scanTarget.userConfig
+	});
+	const deadlineEpochMs = input.options?.deadlineEpochMs ?? (input.options?.maxDurationMs != null ? Date.now() + input.options.maxDurationMs : void 0);
+	const resolvedInput = {
+		...input,
+		options: {
+			...input.options,
+			deadlineEpochMs
+		},
+		configProjects: input.configProjects ?? scanTarget.userConfig?.projects,
+		share: input.share ?? scanTarget.userConfig?.share ?? true
+	};
+	if (input.warningExitCode !== void 0) recordCount(METRIC.scanWarningExitCodeConfigured);
+	const { selectedDirectories, workspaceProjectDirectories } = await resolveProjectSelection(rootDirectory, resolvedInput);
+	const inspectProject = createInvocationInspect(input.options?.concurrency);
+	const blockingLevel = resolveBlockingLevel({ blocking: resolvedInput.blocking }, scanTarget.userConfig);
+	if (selectedDirectories.length === 0) return { exitCode: 0 };
+	if (selectedDirectories.length === 1) return runSingleProjectScan(scanTarget, selectedDirectories[0], workspaceProjectDirectories, resolvedInput, scopePlan, blockingLevel, inspectProject);
+	return runMultiProjectScan(scanTarget, selectedDirectories, workspaceProjectDirectories, resolvedInput, scopePlan, blockingLevel, inspectProject);
+};
+//#endregion
+export { runScanApp };
+
+//# sourceMappingURL=run-scan-app-BS_zTwT4.js.map
+//# debugId=4a28dce7-6c9d-5098-9bbf-65f204021cc3

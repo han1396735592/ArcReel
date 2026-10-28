@@ -1,0 +1,54 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ddf7795b-7bcd-5fc9-bbee-6a4bf44bb3f3")}catch(e){}}();
+import { d as isJsonModeActive, m as writeJsonCancellationReport } from "./record-metric-AbxY4m3i.js";
+import { n as shutdownTelemetry, r as flushSentry } from "./telemetry-runtime-B0ira8s1.js";
+import { t as activeScanAbortRegistry } from "./active-scan-abort-registry-CCTgal0O.js";
+import { n as buildFooterLinkLines, t as buildSectionDivider } from "./build-section-divider-Dpv0R267.js";
+//#region src/cli/utils/active-tui-renderer.ts
+let activeTuiRenderer = null;
+const registerActiveTuiRenderer = (renderer) => {
+	activeTuiRenderer = renderer;
+	return () => {
+		if (activeTuiRenderer === renderer) activeTuiRenderer = null;
+	};
+};
+const preserveActiveTuiRendererOutput = () => {
+	const renderer = activeTuiRenderer;
+	activeTuiRenderer = null;
+	renderer?.preserveOutput();
+};
+//#endregion
+//#region src/cli/utils/exit-gracefully.ts
+let didStartExiting = false;
+const exitGracefully = () => {
+	if (didStartExiting) return process.exit(130);
+	didStartExiting = true;
+	let activeScanCleanup = Promise.resolve();
+	try {
+		activeScanCleanup = activeScanAbortRegistry.abortAll();
+	} catch {}
+	try {
+		preserveActiveTuiRendererOutput();
+	} catch {}
+	try {
+		if (isJsonModeActive()) writeJsonCancellationReport();
+		else console.log([
+			"",
+			"Cancelled.",
+			"",
+			buildSectionDivider(),
+			"",
+			...buildFooterLinkLines({ shareUrl: null })
+		].join("\n"));
+	} catch {}
+	Promise.all([
+		activeScanCleanup,
+		flushSentry(),
+		shutdownTelemetry()
+	]).finally(() => process.exit(130));
+};
+//#endregion
+export { registerActiveTuiRenderer as n, exitGracefully as t };
+
+//# sourceMappingURL=exit-gracefully-Cp3r9mjN.js.map
+//# debugId=ddf7795b-7bcd-5fc9-bbee-6a4bf44bb3f3

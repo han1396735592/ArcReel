@@ -1,0 +1,225 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="036daa0d-20ef-5a7e-b004-e4f41f80cf0c")}catch(e){}}();
+import { o as OXLINT_WORKER_JOB_END_MARKER, s as REACT_DOCTOR_PLUGIN_RESET_HOOK_KEY } from "./constants-DNh19qg9.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { pathToFileURL } from "node:url";
+import * as os$1 from "node:os";
+//#region ../core/src/utils/classify-existence-answer.ts
+const classifyExistenceAnswer = (absolutePath) => {
+	try {
+		const stat = fs$1.statSync(absolutePath);
+		if (stat.isFile()) return "file";
+		if (stat.isDirectory()) return "dir";
+		return "none";
+	} catch {
+		return "none";
+	}
+};
+//#endregion
+//#region ../core/src/utils/collect-file-probe-trace.ts
+const collectFileProbeTrace = (collect, absoluteFilePath, ruleIds) => {
+	try {
+		return collect({
+			absoluteFilePath,
+			sourceText: fs$1.readFileSync(absoluteFilePath, "utf8"),
+			ruleIds
+		});
+	} catch {
+		return null;
+	}
+};
+//#endregion
+//#region ../core/src/utils/create-filesystem-cache-epoch-gate.ts
+const createFilesystemCacheEpochGate = () => {
+	let lastFilesystemCacheEpoch = null;
+	return { shouldReset: (filesystemCacheEpoch) => {
+		if (filesystemCacheEpoch !== null && filesystemCacheEpoch === lastFilesystemCacheEpoch) return false;
+		lastFilesystemCacheEpoch = filesystemCacheEpoch;
+		return true;
+	} };
+};
+//#endregion
+//#region ../core/src/start-oxlint-worker.ts
+const LINT_IMPORT_PATTERN = /import\s*\{\s*(\w+)\s+as\s+lint\s*\}\s*from\s*"\.\/bindings\.js"/;
+const isForwardedFunction = (value) => typeof value === "function";
+const readFunctionExport = (moduleNamespace, exportName) => {
+	if (typeof moduleNamespace !== "object" || moduleNamespace === null || !(exportName in moduleNamespace)) throw new Error(`oxlint internals do not export "${exportName}"`);
+	const exported = Reflect.get(moduleNamespace, exportName);
+	if (!isForwardedFunction(exported)) throw new Error(`oxlint internal export "${exportName}" is not a function`);
+	return exported;
+};
+const readWorkspacesExport = (moduleNamespace) => {
+	if (typeof moduleNamespace !== "object" || moduleNamespace === null || !("workspaces" in moduleNamespace)) return null;
+	const exported = Reflect.get(moduleNamespace, "workspaces");
+	return exported instanceof Map ? exported : null;
+};
+const importOxlintInternals = async (oxlintPackageDirectory) => {
+	const distDirectory = path$1.join(oxlintPackageDirectory, "dist");
+	const cliSource = fs$1.readFileSync(path$1.join(distDirectory, "cli.js"), "utf8");
+	const lintExportName = LINT_IMPORT_PATTERN.exec(cliSource)?.[1];
+	if (lintExportName === void 0) throw new Error("could not locate oxlint's `lint` binding export");
+	const importDist = (fileName) => import(pathToFileURL(path$1.join(distDirectory, fileName)).href);
+	const [bindings, plugins, workspace] = await Promise.all([
+		importDist("bindings.js"),
+		importDist("plugins.js"),
+		importDist("workspace.js")
+	]);
+	const loadJsConfigs = (...forwarded) => importDist("js_config.js").then((jsConfig) => readFunctionExport(jsConfig, process.env.VP_VERSION ? "loadVitePlusConfigs" : "loadJsConfigs")(...forwarded));
+	return {
+		lint: readFunctionExport(bindings, lintExportName),
+		loadPlugin: readFunctionExport(plugins, "loadPlugin"),
+		setupRuleConfigs: readFunctionExport(plugins, "setupRuleConfigs"),
+		lintFile: readFunctionExport(plugins, "lintFile"),
+		createWorkspace: readFunctionExport(workspace, "createWorkspace"),
+		destroyWorkspace: readFunctionExport(workspace, "destroyWorkspace"),
+		loadJsConfigs,
+		workspaces: readWorkspacesExport(workspace)
+	};
+};
+const setStdioBlocking = (stream) => {
+	if (!("_handle" in stream)) return;
+	const handle = stream._handle;
+	if (typeof handle !== "object" || handle === null || !("setBlocking" in handle)) return;
+	const setBlocking = handle.setBlocking;
+	if (typeof setBlocking === "function") setBlocking.call(handle, true);
+};
+const writeLine = (fileDescriptor, line) => {
+	fs$1.writeSync(fileDescriptor, `\n${line}\n`);
+};
+const isJobMessage = (message) => typeof message === "object" && message !== null && "type" in message && message.type === "job" && "id" in message && typeof message.id === "number" && "cwd" in message && typeof message.cwd === "string" && "argumentsList" in message && Array.isArray(message.argumentsList) && "filesystemCacheEpoch" in message && (message.filesystemCacheEpoch === null || typeof message.filesystemCacheEpoch === "number");
+const isProbeJobMessage = (message) => typeof message === "object" && message !== null && "type" in message && message.type === "probes" && "id" in message && typeof message.id === "number" && "cwd" in message && typeof message.cwd === "string" && "files" in message && Array.isArray(message.files) && "ruleIds" in message && Array.isArray(message.ruleIds) && "filesystemCacheEpoch" in message && (message.filesystemCacheEpoch === null || typeof message.filesystemCacheEpoch === "number");
+const sendToParent = (message) => {
+	process.send?.(message);
+};
+const resetPluginFilesystemCaches = () => {
+	const resetHook = Reflect.get(globalThis, REACT_DOCTOR_PLUGIN_RESET_HOOK_KEY);
+	if (typeof resetHook === "function") resetHook();
+};
+const filesystemCacheEpochGate = createFilesystemCacheEpochGate();
+const idleWorkingDirectory = process.cwd();
+const leaveJobWorkingDirectory = () => {
+	try {
+		process.chdir(idleWorkingDirectory);
+	} catch {
+		process.chdir(os$1.tmpdir());
+	}
+};
+const runJob = async (internals, job) => {
+	const workspaceUri = `file:///react-doctor-oxlint-job-${job.id}`;
+	let status = "error";
+	let errorMessage = null;
+	try {
+		process.chdir(job.cwd);
+		if (filesystemCacheEpochGate.shouldReset(job.filesystemCacheEpoch)) resetPluginFilesystemCaches();
+		internals.createWorkspace(workspaceUri);
+		status = await internals.lint(job.argumentsList, (...forwarded) => internals.loadPlugin(...[...forwarded.slice(0, 3), workspaceUri]), (...forwarded) => internals.setupRuleConfigs(...forwarded), (...forwarded) => internals.lintFile(...[...forwarded.slice(0, 7), workspaceUri]), (...forwarded) => Promise.resolve(internals.createWorkspace(...forwarded)), (...forwarded) => internals.destroyWorkspace(...forwarded), (...forwarded) => internals.loadJsConfigs(...forwarded)) === false ? "findings" : "ok";
+	} catch (error) {
+		errorMessage = error instanceof Error ? error.stack ?? error.message : String(error);
+	} finally {
+		internals.destroyWorkspace(workspaceUri);
+		internals.workspaces?.delete(workspaceUri);
+		leaveJobWorkingDirectory();
+	}
+	if (errorMessage !== null) fs$1.writeSync(2, `${errorMessage}\n`);
+	writeLine(1, `${OXLINT_WORKER_JOB_END_MARKER}:${job.id}:${status}`);
+	writeLine(2, `${OXLINT_WORKER_JOB_END_MARKER}:${job.id}:end`);
+};
+const preloadPlugin = async (pluginPath) => {
+	if (pluginPath === void 0) return;
+	try {
+		await import(pathToFileURL(pluginPath).href);
+	} catch {
+		return;
+	}
+};
+let probeCollectorModule = null;
+const loadProbeCollector = () => probeCollectorModule ??= import("oxlint-plugin-react-doctor/core");
+const collectProbeTraces = (collectCrossFileDependencyProbes, job) => {
+	const paths = [];
+	const existenceAnswers = [];
+	const pathIndexByRelativePath = /* @__PURE__ */ new Map();
+	const internPath = (absolutePath, isExistenceProbe) => {
+		const relativePath = path$1.relative(job.cwd, absolutePath).replaceAll("\\", "/");
+		let pathIndex = pathIndexByRelativePath.get(relativePath);
+		if (pathIndex === void 0) {
+			pathIndex = paths.length;
+			paths.push(relativePath);
+			existenceAnswers.push(null);
+			pathIndexByRelativePath.set(relativePath, pathIndex);
+		}
+		if (isExistenceProbe && existenceAnswers[pathIndex] === null) existenceAnswers[pathIndex] = classifyExistenceAnswer(absolutePath);
+		return pathIndex;
+	};
+	return {
+		paths,
+		existenceAnswers,
+		traces: job.files.map((file) => {
+			const trace = collectFileProbeTrace(collectCrossFileDependencyProbes, path$1.resolve(job.cwd, file), job.ruleIds);
+			if (trace === null) return null;
+			return {
+				file,
+				content: [...trace.contentPaths].map((contentPath) => internPath(contentPath, false)),
+				existence: [...trace.existencePaths].map((existencePath) => internPath(existencePath, true))
+			};
+		})
+	};
+};
+const runProbeJob = async (job) => {
+	let status = "error";
+	let errorMessage = null;
+	try {
+		const { collectCrossFileDependencyProbes } = await loadProbeCollector();
+		process.chdir(job.cwd);
+		if (filesystemCacheEpochGate.shouldReset(job.filesystemCacheEpoch)) resetPluginFilesystemCaches();
+		fs$1.writeSync(1, JSON.stringify(collectProbeTraces(collectCrossFileDependencyProbes, job)));
+		status = "ok";
+	} catch (error) {
+		errorMessage = error instanceof Error ? error.stack ?? error.message : String(error);
+	} finally {
+		leaveJobWorkingDirectory();
+	}
+	if (errorMessage !== null) fs$1.writeSync(2, `${errorMessage}\n`);
+	writeLine(1, `${OXLINT_WORKER_JOB_END_MARKER}:${job.id}:${status}`);
+	writeLine(2, `${OXLINT_WORKER_JOB_END_MARKER}:${job.id}:end`);
+};
+const startOxlintWorker = () => {
+	const oxlintPackageDirectory = process.argv[2];
+	const pluginPath = process.argv[3];
+	process.on("disconnect", () => process.exit(0));
+	if (oxlintPackageDirectory === void 0) {
+		sendToParent({
+			type: "unavailable",
+			message: "missing oxlint package directory argument"
+		});
+		return;
+	}
+	setStdioBlocking(process.stdout);
+	setStdioBlocking(process.stderr);
+	Promise.all([importOxlintInternals(oxlintPackageDirectory), preloadPlugin(pluginPath)]).then(([internals]) => {
+		let queue = Promise.resolve();
+		process.on("message", (message) => {
+			if (isProbeJobMessage(message)) {
+				queue = queue.then(() => runProbeJob(message));
+				return;
+			}
+			if (!isJobMessage(message)) return;
+			queue = queue.then(() => runJob(internals, message));
+		});
+		sendToParent({ type: "ready" });
+		loadProbeCollector().catch(() => void 0);
+	}, (error) => {
+		sendToParent({
+			type: "unavailable",
+			message: error instanceof Error ? error.message : String(error)
+		});
+	});
+};
+//#endregion
+//#region src/oxlint-worker.ts
+startOxlintWorker();
+//#endregion
+export {};
+
+//# sourceMappingURL=oxlint-worker.js.map
+//# debugId=036daa0d-20ef-5a7e-b004-e4f41f80cf0c

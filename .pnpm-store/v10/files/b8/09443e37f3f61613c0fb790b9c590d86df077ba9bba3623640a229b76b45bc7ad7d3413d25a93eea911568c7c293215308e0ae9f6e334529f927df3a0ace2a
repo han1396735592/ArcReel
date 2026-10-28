@@ -1,0 +1,115 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ea2afe55-3d9b-57c4-988d-7498eb47c26a")}catch(e){}}();
+import { ct as CANONICAL_DISCORD_URL, lt as CANONICAL_GITHUB_URL, u as METRIC } from "./constants-_b1h6lxa.js";
+import { Ft as isReactDoctorError, Mt as highlighter, Tn as runSync, Un as isErrnoException, _ as VERSION, bt as formatErrorChain, cn as error, gn as gen, t as recordCount, xt as formatReactDoctorError } from "./record-metric-AbxY4m3i.js";
+import { c as isNpmCacheCorruptionError, l as formatEnvironmentError, s as formatNpmCacheCorruptionError, u as isEnvironmentError } from "./telemetry-runtime-B0ira8s1.js";
+//#region src/cli/utils/handle-error.ts
+const OTLP_ENDPOINT_ENVIRONMENT_VARIABLE = "REACT_DOCTOR_OTLP_ENDPOINT";
+const OTLP_AUTH_HEADER_ENVIRONMENT_VARIABLE = "REACT_DOCTOR_OTLP_AUTH_HEADER";
+const formatErrorForReport = (error) => isReactDoctorError(error) ? formatReactDoctorError(error) : formatErrorChain(error);
+const formatSingleLine = (text) => text.replaceAll(/\s+/g, " ").trim();
+const getErrorReportContext = () => ({
+	cwd: process.cwd(),
+	command: process.argv.join(" "),
+	nodeVersion: process.version,
+	platform: process.platform,
+	architecture: process.arch,
+	isOtlpEndpointConfigured: Boolean(process.env[OTLP_ENDPOINT_ENVIRONMENT_VARIABLE]),
+	isOtlpAuthHeaderConfigured: Boolean(process.env[OTLP_AUTH_HEADER_ENVIRONMENT_VARIABLE])
+});
+const formatConfiguredState = (isConfigured) => isConfigured ? "yes" : "no";
+const buildErrorIssueBody = (error, context, sentryEventId) => {
+	const formattedError = formatErrorForReport(error) || "(empty error)";
+	const isOtlpExporterEnabled = context.isOtlpEndpointConfigured && context.isOtlpAuthHeaderConfigured;
+	return [
+		"## Error",
+		"",
+		"```text",
+		formattedError,
+		"```",
+		"",
+		"## Runtime",
+		"",
+		`- react-doctor version: ${VERSION}`,
+		`- node: ${context.nodeVersion}`,
+		`- platform: ${context.platform} ${context.architecture}`,
+		`- cwd: ${context.cwd}`,
+		`- command: ${context.command}`,
+		...sentryEventId ? [`- Sentry reference: ${sentryEventId}`] : [],
+		"",
+		"## OpenTelemetry",
+		"",
+		`- ${OTLP_ENDPOINT_ENVIRONMENT_VARIABLE} configured: ${formatConfiguredState(context.isOtlpEndpointConfigured)}`,
+		`- ${OTLP_AUTH_HEADER_ENVIRONMENT_VARIABLE} configured: ${formatConfiguredState(context.isOtlpAuthHeaderConfigured)} (value redacted)`,
+		`- OTLP exporter enabled: ${formatConfiguredState(isOtlpExporterEnabled)}`,
+		"- trace/span link, if exported: ",
+		"",
+		"## Notes",
+		"",
+		"Please add reproduction steps and any relevant repository details."
+	].join("\n");
+};
+const buildErrorIssueUrl = (error, sentryEventId) => {
+	const formattedError = formatSingleLine(formatErrorForReport(error));
+	const issueUrl = new URL(`${CANONICAL_GITHUB_URL}/issues/new`);
+	issueUrl.searchParams.set("title", formattedError ? `CLI error: ${formattedError}` : "CLI error");
+	issueUrl.searchParams.set("labels", "bug");
+	issueUrl.searchParams.set("body", buildErrorIssueBody(error, getErrorReportContext(), sentryEventId));
+	return issueUrl.toString();
+};
+/**
+* Effect-typed renderer: every message routes through `Console.error`
+* so test runs can swap `Console` to a capture sink and the output
+* appears in the right stream (stderr) in production. Lines stay
+* red-highlighted (matches the historical `consoleLogger.error`
+* contract) so the user sees a clearly distinguished error block.
+*/
+const handleErrorEffect = (error$2, sentryEventId) => gen(function* () {
+	yield* error("");
+	yield* error(highlighter.error("Something went wrong. Please check the error below for more details."));
+	yield* error(highlighter.error(`If the problem persists, please open this prefilled issue: ${buildErrorIssueUrl(error$2, sentryEventId)}`));
+	yield* error(highlighter.error(`You can also ask for help in Discord: ${CANONICAL_DISCORD_URL}`));
+	if (sentryEventId) yield* error(highlighter.error(`Reference (mention this when reporting): ${sentryEventId}`));
+	yield* error("");
+	yield* error(highlighter.error(formatErrorForReport(error$2)));
+	yield* error("");
+});
+/**
+* Sync façade for legacy callers (top-level CLI command bodies that
+* aren't yet Effect-typed). Bridges via `Effect.runSync` so the
+* underlying Console writes happen exactly like the Effect path.
+*/
+const handleError = (error, options = {}) => {
+	runSync(handleErrorEffect(error, options.sentryEventId));
+	if (options.shouldExit !== false) process.exit(1);
+	process.exitCode = 1;
+};
+/**
+* Renderer for expected, user-actionable failures — a bad `--diff` value,
+* a base branch that isn't fetched, environment errors like disk-full or
+* permission-denied, or npm cache corruption. Prints just the (already
+* human-readable) message — no "Something went wrong", prefilled issue,
+* Discord link, or Sentry reference — because there is no bug to report.
+*/
+const handleUserError = (error$1, options = {}) => {
+	let message = formatErrorForReport(error$1);
+	if (isNpmCacheCorruptionError(error$1)) {
+		recordCount(METRIC.cliEnvironmentError, 1, { code: "NPX_CACHE_CORRUPTION" });
+		message = formatNpmCacheCorruptionError(error$1);
+	} else if (isEnvironmentError(error$1)) {
+		recordCount(METRIC.cliEnvironmentError, 1, { code: (isErrnoException(error$1) ? error$1.code : void 0) ?? "unknown" });
+		message = formatEnvironmentError(error$1);
+	}
+	runSync(gen(function* () {
+		yield* error("");
+		yield* error(highlighter.error(message));
+		yield* error("");
+	}));
+	if (options.shouldExit !== false) process.exit(1);
+	process.exitCode = 1;
+};
+//#endregion
+export { handleUserError as n, handleError as t };
+
+//# sourceMappingURL=handle-error-UbC9DMvZ.js.map
+//# debugId=ea2afe55-3d9b-57c4-988d-7498eb47c26a

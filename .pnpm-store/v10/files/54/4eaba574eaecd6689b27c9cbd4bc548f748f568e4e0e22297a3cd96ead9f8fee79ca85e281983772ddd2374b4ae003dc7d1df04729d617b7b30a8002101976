@@ -1,0 +1,293 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="c05eedee-626c-5c85-9b71-56225de7b0f2")}catch(e){}}();
+import { m as REACT_DOCTOR_CONFIG_PROJECT_NAME, u as METRIC } from "./constants-_b1h6lxa.js";
+import { t as recordCount } from "./record-metric-AbxY4m3i.js";
+import { u as isCommandAvailable } from "./install-github-workflow-BABtyGBR.js";
+import { createRequire } from "node:module";
+import * as path$1 from "node:path";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import process$1 from "node:process";
+//#region src/cli/utils/create-lazy-require.ts
+const createLazyRequire = (importMetaUrl, specifier) => {
+	const requireModule = createRequire(importMetaUrl);
+	let cachedModule = null;
+	return () => cachedModule ??= requireModule(specifier);
+};
+//#endregion
+//#region src/cli/utils/load-agent-install.ts
+const loadAgentInstall = createLazyRequire(import.meta.url, "agent-install");
+//#endregion
+//#region src/cli/utils/detect-agents.ts
+const PATH_BINARIES = {
+	"claude-code": ["claude"],
+	codex: ["codex"],
+	cursor: ["cursor", "agent"],
+	droid: ["droid"],
+	"gemini-cli": ["gemini"],
+	"github-copilot": ["copilot"],
+	opencode: ["opencode"],
+	pi: ["pi", "omegon"]
+};
+const detectPathAvailableAgents = () => {
+	const detected = [];
+	for (const [agent, binaries] of Object.entries(PATH_BINARIES)) if (binaries.some(isCommandAvailable)) detected.push(agent);
+	return detected;
+};
+const detectAvailableAgents = async () => {
+	const { detectInstalledSkillAgents, getSkillAgentTypes } = loadAgentInstall();
+	const detected = new Set([...detectPathAvailableAgents(), ...await detectInstalledSkillAgents()]);
+	return getSkillAgentTypes().filter((agent) => agent !== "universal" && detected.has(agent));
+};
+const DEFAULT_INSTALL_AGENTS = [
+	"claude-code",
+	"cursor",
+	"codex",
+	"opencode"
+];
+const computeDefaultSelectedAgents = (detectedAgents, rememberedAgents) => {
+	const detected = new Set(detectedAgents);
+	const remembered = rememberedAgents.filter((agent) => detected.has(agent));
+	if (remembered.length > 0) return remembered;
+	const defaults = DEFAULT_INSTALL_AGENTS.filter((agent) => detected.has(agent));
+	if (defaults.length > 0) return defaults;
+	return detectedAgents.length === 1 ? [...detectedAgents] : [];
+};
+//#endregion
+//#region src/cli/utils/now-iso.ts
+const nowIso = () => (/* @__PURE__ */ new Date()).toISOString();
+const ONBOARDING_EVENT = "onboarding";
+const CI_PITCH_EVENT = "ci-pitch";
+const ACTION_UPGRADE_EVENT = "action-upgrade-v2";
+const SETUP_HINT_EVENT = "setup-hint";
+const HANDOFF_TARGET_PREFERENCE_ID = "handoff-target";
+const INSTALL_AGENTS_PREFERENCE_ID = "install-agents";
+const foldLegacyDecisions = (projects, legacy, eventId) => {
+	for (const [hash, record] of Object.entries(legacy ?? {})) {
+		const existing = projects[hash] ?? { rootDirectory: record.rootDirectory ?? "" };
+		projects[hash] = {
+			...existing,
+			events: {
+				...existing.events,
+				[eventId]: {
+					firedAt: record.at ?? nowIso(),
+					version: 1,
+					...record.outcome ? { outcome: record.outcome } : {}
+				}
+			}
+		};
+	}
+};
+const migrateCliState = (state) => {
+	if (typeof state.schemaVersion === "number" && state.schemaVersion >= 2) return state;
+	const projects = {};
+	for (const [hash, record] of Object.entries(state.projects ?? {})) {
+		const carried = {
+			rootDirectory: record.rootDirectory,
+			...record.events ? { events: record.events } : {},
+			...record.migrations ? { migrations: record.migrations } : {}
+		};
+		projects[hash] = record.setupPrompt === false ? {
+			...carried,
+			events: {
+				...carried.events,
+				[SETUP_HINT_EVENT]: {
+					firedAt: nowIso(),
+					version: 1,
+					outcome: "declined"
+				}
+			}
+		} : carried;
+	}
+	foldLegacyDecisions(projects, state.ciPrompts, CI_PITCH_EVENT);
+	foldLegacyDecisions(projects, state.actionUpgrades, ACTION_UPGRADE_EVENT);
+	return {
+		schemaVersion: 2,
+		global: typeof state.onboardedAt === "string" ? { events: { [ONBOARDING_EVENT]: {
+			firedAt: state.onboardedAt,
+			version: 1
+		} } } : {},
+		projects
+	};
+};
+const resolveConfigDir = (options) => options.cwd ?? (process.env["REACT_DOCTOR_CONFIG_DIR"] || void 0);
+const loadConfModule = createLazyRequire(import.meta.url, "conf");
+const loadConf = () => loadConfModule().default;
+const openStore = (options = {}) => new (loadConf())({
+	projectName: REACT_DOCTOR_CONFIG_PROJECT_NAME,
+	cwd: resolveConfigDir(options)
+});
+const openMigratedStore = (options) => {
+	const store = openStore(options);
+	const state = store.store;
+	const migrated = migrateCliState(state);
+	if (migrated !== state) store.store = migrated;
+	return store;
+};
+const readCliState = (select, fallback, options = {}) => {
+	try {
+		return select(openMigratedStore(options).store);
+	} catch {
+		return fallback;
+	}
+};
+const updateCliState = (update, options = {}) => {
+	try {
+		const store = openMigratedStore(options);
+		store.store = update(store.store);
+		return true;
+	} catch {
+		return false;
+	}
+};
+//#endregion
+//#region src/cli/utils/hash-project-root.ts
+const hashProjectRoot = (projectRoot) => createHash("sha256").update(path$1.resolve(projectRoot)).digest("hex");
+//#endregion
+//#region src/cli/utils/cli-lifecycle.ts
+const versionOf = (item) => item.version ?? 1;
+const selectScope = (state, scoped, projectRoot) => scoped.scope === "global" ? state.global : projectRoot === void 0 ? void 0 : state.projects?.[hashProjectRoot(projectRoot)];
+const updateScope = (state, scoped, projectRoot, updateScopeState) => {
+	if (scoped.scope === "global") return {
+		...state,
+		global: updateScopeState(state.global ?? {})
+	};
+	if (projectRoot === void 0) return state;
+	const projectKey = hashProjectRoot(projectRoot);
+	const base = state.projects?.[projectKey] ?? { rootDirectory: path$1.resolve(projectRoot) };
+	return {
+		...state,
+		projects: {
+			...state.projects,
+			[projectKey]: {
+				...base,
+				...updateScopeState(base)
+			}
+		}
+	};
+};
+const isGatePending = (gate, target = {}, options = {}) => {
+	if (gate.scope === "project" && target.projectRoot === void 0) return false;
+	return readCliState((state) => {
+		const record = selectScope(state, gate, target.projectRoot)?.events?.[gate.id];
+		return !record || record.version < versionOf(gate);
+	}, gate.fireWhenUnknown ?? false, options);
+};
+const recordGate = (gate, target = {}, options = {}) => updateCliState((state) => updateScope(state, gate, target.projectRoot, (scope) => ({
+	...scope,
+	events: {
+		...scope.events,
+		[gate.id]: {
+			firedAt: nowIso(),
+			version: versionOf(gate),
+			...target.outcome ? { outcome: target.outcome } : {}
+		}
+	}
+})), options);
+const readPreference = (preference, target = {}, options = {}) => readCliState((state) => selectScope(state, preference, target.projectRoot)?.preferences?.[preference.id] ?? null, null, options);
+const writePreference = (preference, value, target = {}, options = {}) => updateCliState((state) => updateScope(state, preference, target.projectRoot, (scope) => ({
+	...scope,
+	preferences: {
+		...scope.preferences,
+		[preference.id]: value
+	}
+})), options);
+const isMigrationPending = (migration, target = {}, options = {}) => {
+	if (migration.scope === "project" && target.projectRoot === void 0) return false;
+	return readCliState((state) => {
+		const record = selectScope(state, migration, target.projectRoot)?.migrations?.[migration.id];
+		return !record || record.version < versionOf(migration);
+	}, false, options);
+};
+const recordMigration = (migration, projectRoot, record, options) => updateCliState((state) => updateScope(state, migration, projectRoot, (scope) => ({
+	...scope,
+	migrations: {
+		...scope.migrations,
+		[migration.id]: record
+	}
+})), options);
+const runMigrations = async (migrations, target = {}, options = {}) => {
+	const results = [];
+	for (const migration of migrations) {
+		if (!isMigrationPending(migration, target, options)) {
+			results.push({
+				id: migration.id,
+				ran: false,
+				applied: true
+			});
+			continue;
+		}
+		let applied = false;
+		try {
+			applied = await migration.run({ projectRoot: target.projectRoot });
+		} catch {
+			applied = false;
+		}
+		if (applied) recordMigration(migration, target.projectRoot, {
+			ranAt: nowIso(),
+			version: versionOf(migration)
+		}, options);
+		results.push({
+			id: migration.id,
+			ran: true,
+			applied
+		});
+	}
+	return results;
+};
+//#endregion
+//#region src/cli/utils/open-url.ts
+const resolveOpenCommand = (url) => {
+	if (process$1.platform === "darwin") return {
+		command: "open",
+		args: [url]
+	};
+	if (process$1.platform === "win32") return {
+		command: "cmd",
+		args: [
+			"/c",
+			"start",
+			"",
+			url
+		]
+	};
+	return {
+		command: "xdg-open",
+		args: [url]
+	};
+};
+const openUrl = (url) => new Promise((resolve) => {
+	try {
+		const { command, args } = resolveOpenCommand(url);
+		const child = spawn(command, args, {
+			detached: true,
+			stdio: "ignore"
+		});
+		child.once("spawn", () => resolve(true));
+		child.once("error", () => resolve(false));
+		child.unref();
+	} catch {
+		resolve(false);
+	}
+});
+//#endregion
+//#region src/cli/utils/report-workflow-result.ts
+const reportWorkflowResult = (workflowSpinner, result, projectRoot) => {
+	if (result.status === "failed") {
+		if (result.error === "no-git-root") workflowSpinner.fail("Couldn't write the GitHub Actions workflow: no git repository found. Run this command from inside a git repository.");
+		else workflowSpinner.fail("Couldn't write the GitHub Actions workflow.");
+		return false;
+	}
+	if (result.status === "exists") {
+		workflowSpinner.succeed("GitHub Actions workflow already configured.");
+		return false;
+	}
+	workflowSpinner.succeed(`GitHub Actions workflow added at ${path$1.relative(projectRoot, result.workflowPath)}.`);
+	recordCount(METRIC.installWorkflow, 1);
+	return true;
+};
+//#endregion
+export { recordGate as a, ACTION_UPGRADE_EVENT as c, INSTALL_AGENTS_PREFERENCE_ID as d, ONBOARDING_EVENT as f, loadAgentInstall as g, detectAvailableAgents as h, readPreference as i, CI_PITCH_EVENT as l, computeDefaultSelectedAgents as m, openUrl as n, runMigrations as o, SETUP_HINT_EVENT as p, isGatePending as r, writePreference as s, reportWorkflowResult as t, HANDOFF_TARGET_PREFERENCE_ID as u };
+
+//# sourceMappingURL=report-workflow-result-DQ2CaExl.js.map
+//# debugId=c05eedee-626c-5c85-9b71-56225de7b0f2

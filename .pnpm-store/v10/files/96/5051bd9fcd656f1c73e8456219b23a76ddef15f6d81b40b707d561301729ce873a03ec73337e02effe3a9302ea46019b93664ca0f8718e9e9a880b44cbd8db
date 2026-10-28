@@ -1,0 +1,65 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="20b58ae5-559c-5f6f-986d-0e5a9c49dd42")}catch(e){}}();
+import { S as SENTRY_FLUSH_TIMEOUT_MS, u as METRIC } from "./constants-_b1h6lxa.js";
+import { Ft as isReactDoctorError, l as getRunId, o as buildSentryScope, t as recordCount } from "./record-metric-AbxY4m3i.js";
+import { i as getSentry, n as shutdownTelemetry, o as isExpectedUserError } from "./telemetry-runtime-B0ira8s1.js";
+import { r as recordRunTraceId, t as getActiveRunTrace } from "./active-run-trace-Dewycxda.js";
+//#region src/cli/utils/report-error.ts
+/**
+* Sends an error to Sentry — enriched with a fresh snapshot of the current run
+* (version, platform, CI/agent, invocation, scanned project) and, when a run
+* transaction is in flight, linked to its trace via the scope's propagation
+* context so the crash and its transaction share a `trace_id` — then waits for
+* delivery before the caller exits. The CLI tears down synchronously after
+* rendering an error, so the awaited `flush` is what actually gets the event
+* (and any in-flight transaction) off the machine.
+*
+* Returns the Sentry event id so the caller can surface it as a reference the
+* user can quote when reporting the bug; returns `undefined` when Sentry was
+* never initialized (`--no-score`, tests, or a missing DSN) or delivery failed.
+* Swallows any transport failure so telemetry can never mask the user's
+* original error.
+*/
+const reportErrorToSentry = async (error) => {
+	const Sentry = await getSentry();
+	if (!Sentry?.isInitialized()) return void 0;
+	if (isExpectedUserError(error)) return void 0;
+	try {
+		const { tags, contexts } = buildSentryScope();
+		let reason = "unknown";
+		if (isReactDoctorError(error)) reason = error.reason._tag;
+		else if (error instanceof Error) reason = error.name;
+		recordCount(METRIC.cliError, 1, {
+			command: typeof tags.command === "string" ? tags.command : void 0,
+			reason
+		});
+		const runTrace = getActiveRunTrace();
+		const eventId = Sentry.withScope((scope) => {
+			for (const [name, context] of Object.entries(contexts)) scope.setContext(name, context);
+			scope.setTags(tags);
+			if (runTrace) {
+				scope.setContext("axiom", {
+					traceId: runTrace.traceId,
+					runId: getRunId()
+				});
+				scope.setPropagationContext({
+					traceId: runTrace.traceId,
+					parentSpanId: runTrace.spanId,
+					sampled: runTrace.sampled,
+					sampleRand: Math.random()
+				});
+			}
+			recordRunTraceId(scope.getPropagationContext().traceId);
+			return Sentry.captureException(error);
+		});
+		await Promise.all([Sentry.flush(SENTRY_FLUSH_TIMEOUT_MS), shutdownTelemetry()]);
+		return eventId;
+	} catch {
+		return;
+	}
+};
+//#endregion
+export { reportErrorToSentry as t };
+
+//# sourceMappingURL=report-error-D3uGbvdG.js.map
+//# debugId=20b58ae5-559c-5f6f-986d-0e5a9c49dd42

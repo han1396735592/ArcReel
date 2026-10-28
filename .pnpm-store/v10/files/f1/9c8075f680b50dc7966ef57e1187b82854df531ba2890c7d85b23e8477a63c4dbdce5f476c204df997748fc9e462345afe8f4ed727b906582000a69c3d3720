@@ -1,0 +1,10 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="53d1559d-afc4-5f2d-83e5-fbc62212e8cd")}catch(e){}}();
+import { a as CACHE_DISABLED_VALUES } from "./constants-_b1h6lxa.js";
+//#region src/cli/utils/is-cache-globally-disabled.ts
+const isCacheGloballyDisabled = () => CACHE_DISABLED_VALUES.has(process.env.REACT_DOCTOR_NO_CACHE?.toLowerCase() ?? "");
+//#endregion
+export { isCacheGloballyDisabled as t };
+
+//# sourceMappingURL=is-cache-globally-disabled-BTTLvugj.js.map
+//# debugId=53d1559d-afc4-5f2d-83e5-fbc62212e8cd

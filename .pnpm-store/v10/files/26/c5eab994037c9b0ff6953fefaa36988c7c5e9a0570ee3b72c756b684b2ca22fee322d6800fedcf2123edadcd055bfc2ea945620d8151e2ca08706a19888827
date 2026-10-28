@@ -1,0 +1,10 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="3aff2b5f-70e1-5531-af57-6c06530bb069")}catch(e){}}();
+import { b as isNonInteractiveEnvironment } from "./record-metric-AbxY4m3i.js";
+//#region src/cli/utils/should-skip-prompts.ts
+const shouldSkipPrompts = (input = {}) => Boolean(input.yes) || Boolean(input.json) || isNonInteractiveEnvironment() || !process.stdin.isTTY;
+//#endregion
+export { shouldSkipPrompts as t };
+
+//# sourceMappingURL=should-skip-prompts-DrbDyg_I.js.map
+//# debugId=3aff2b5f-70e1-5531-af57-6c06530bb069

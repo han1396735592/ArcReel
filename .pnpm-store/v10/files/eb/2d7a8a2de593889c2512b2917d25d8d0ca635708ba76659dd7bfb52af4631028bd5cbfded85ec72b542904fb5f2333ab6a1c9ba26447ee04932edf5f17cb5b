@@ -1,0 +1,2822 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="587e5c77-88dc-5313-9529-7dc120ac766d")}catch(e){}}();
+import { B as resolveGitCommand, g as RUN_GIT_MAX_BUFFER_BYTES } from "./constants-_b1h6lxa.js";
+import { Mt as highlighter, Tn as runSync, b as isNonInteractiveEnvironment, cn as error$1, dn as warn, ln as info$1, un as log } from "./record-metric-AbxY4m3i.js";
+import { a as chalk, i as stripAnsi, t as eastAsianWidth } from "./get-east-asian-width-DRPy7dqz.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { execFileSync } from "node:child_process";
+import process$1 from "node:process";
+import { stripVTControlCharacters } from "node:util";
+import tty from "node:tty";
+import isUnicodeSupported from "is-unicode-supported";
+//#region src/cli/utils/cli-logger.ts
+/**
+* Thin synchronous façade over Effect's `Console` module. Used by
+* the imperative CLI helper files (`select-projects`, `run-explain`,
+* `install-react-doctor`, the legacy paths in `cli/commands/inspect.ts`)
+* that aren't yet Effect-typed. Every call drains into a single
+* `Console.*` Effect via `Effect.runSync`, so the underlying logging
+* pipeline is identical to the canonical `yield* Console.log(...)`
+* call sites in the renderers. Convert callers to `Effect.gen` to
+* drop the bridge.
+*/
+const cliLogger = {
+	log: (message) => {
+		runSync(log(message));
+	},
+	warn: (message) => {
+		runSync(warn(highlighter.warn(message)));
+	},
+	error: (message) => {
+		runSync(error$1(highlighter.error(message)));
+	},
+	info: (message) => {
+		runSync(info$1(highlighter.info(message)));
+	},
+	dim: (message) => {
+		runSync(log(highlighter.gray(message)));
+	},
+	success: (message) => {
+		runSync(log(highlighter.success(message)));
+	},
+	break: () => {
+		runSync(log(""));
+	}
+};
+//#endregion
+//#region src/cli/utils/git-hook-shared.ts
+const HOOK_FILE_NAME = "pre-commit";
+const HOOK_RELATIVE_PATH = "hooks/pre-commit";
+const LEGACY_HOOK_RUNNER_RELATIVE_PATH = ".react-doctor/hooks/pre-commit";
+const HUSKY_HOOKS_PATH = ".husky";
+const VITE_PLUS_HOOKS_PATH = ".vite-hooks";
+const SIMPLE_GIT_HOOKS_PACKAGE_JSON_KEY = "simple-git-hooks";
+const SIMPLE_GIT_HOOKS_CONFIG_FILE = ".simple-git-hooks.cjs";
+const LEFTHOOK_CONFIG_FILES = ["lefthook.yml", "lefthook.yaml"];
+const PRE_COMMIT_CONFIG_FILE = ".pre-commit-config.yaml";
+const OVERCOMMIT_CONFIG_FILE = ".overcommit.yml";
+const REACT_DOCTOR_COMMAND = "react-doctor --staged --blocking warning";
+const NON_BLOCKING_REACT_DOCTOR_COMMAND = [
+	"react_doctor_output=$(mktemp \"${TMPDIR:-/tmp}/react-doctor-hook.XXXXXX\");",
+	`if ${REACT_DOCTOR_COMMAND} > "$react_doctor_output" 2>&1; then`,
+	"rm -f \"$react_doctor_output\";",
+	"else",
+	"cat \"$react_doctor_output\" >&2;",
+	"rm -f \"$react_doctor_output\";",
+	`printf "%s\\n" "React Doctor found staged regressions." "Run ${REACT_DOCTOR_COMMAND} to inspect." "Want them fixed? Ask your agent to run that command and resolve the findings." >&2;`,
+	"fi"
+].join(" ");
+const PACKAGE_JSON_FILE_NAME = "package.json";
+const runGitRaw = (projectRoot, args) => {
+	try {
+		return execFileSync("git", [...args], {
+			cwd: projectRoot,
+			encoding: "utf8",
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			maxBuffer: RUN_GIT_MAX_BUFFER_BYTES,
+			env: {
+				...process.env,
+				GIT_DIR: void 0
+			}
+		});
+	} catch {
+		return null;
+	}
+};
+const runGit = (projectRoot, args) => runGitRaw(projectRoot, args)?.trim() ?? null;
+const runGitAsync = async (projectRoot, args) => {
+	const output = await resolveGitCommand({
+		directory: projectRoot,
+		args,
+		maxBufferBytes: RUN_GIT_MAX_BUFFER_BYTES
+	});
+	return output === null ? null : output.trim();
+};
+const resolveGitPath = (baseDirectory, value) => path$1.isAbsolute(value) ? value : path$1.resolve(baseDirectory, value);
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+const getPackageJsonPath = (projectRoot) => path$1.join(projectRoot, PACKAGE_JSON_FILE_NAME);
+const readPackageJson = (projectRoot) => {
+	try {
+		return JSON.parse(fs$1.readFileSync(getPackageJsonPath(projectRoot), "utf8"));
+	} catch {
+		return null;
+	}
+};
+const writeJsonFile = (filePath, value) => {
+	fs$1.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+};
+const packageHasDependency = (projectRoot, dependencyName) => {
+	const packageJson = readPackageJson(projectRoot);
+	if (!isRecord(packageJson)) return false;
+	return [
+		"dependencies",
+		"devDependencies",
+		"optionalDependencies"
+	].some((fieldName) => {
+		const dependencies = packageJson[fieldName];
+		return isRecord(dependencies) && typeof dependencies[dependencyName] === "string";
+	});
+};
+const packageHasRecordKey = (projectRoot, key) => {
+	const packageJson = readPackageJson(projectRoot);
+	return isRecord(packageJson) && isRecord(packageJson[key]);
+};
+const packageHasNestedRecordKey = (projectRoot, key, nestedKey) => {
+	const packageJson = readPackageJson(projectRoot);
+	if (!isRecord(packageJson)) return false;
+	const value = packageJson[key];
+	return isRecord(value) && isRecord(value[nestedKey]);
+};
+const ensureTrailingNewline = (content) => content.endsWith("\n") ? content : `${content}\n`;
+//#endregion
+//#region ../../node_modules/.pnpm/mimic-function@5.0.1/node_modules/mimic-function/index.js
+const copyProperty = (to, from, property, ignoreNonConfigurable) => {
+	if (property === "length" || property === "prototype") return;
+	if (property === "arguments" || property === "caller") return;
+	const toDescriptor = Object.getOwnPropertyDescriptor(to, property);
+	const fromDescriptor = Object.getOwnPropertyDescriptor(from, property);
+	if (!canCopyProperty(toDescriptor, fromDescriptor) && ignoreNonConfigurable) return;
+	Object.defineProperty(to, property, fromDescriptor);
+};
+const canCopyProperty = function(toDescriptor, fromDescriptor) {
+	return toDescriptor === void 0 || toDescriptor.configurable || toDescriptor.writable === fromDescriptor.writable && toDescriptor.enumerable === fromDescriptor.enumerable && toDescriptor.configurable === fromDescriptor.configurable && (toDescriptor.writable || toDescriptor.value === fromDescriptor.value);
+};
+const changePrototype = (to, from) => {
+	const fromPrototype = Object.getPrototypeOf(from);
+	if (fromPrototype === Object.getPrototypeOf(to)) return;
+	Object.setPrototypeOf(to, fromPrototype);
+};
+const wrappedToString = (withName, fromBody) => `/* Wrapped ${withName}*/\n${fromBody}`;
+const toStringDescriptor = Object.getOwnPropertyDescriptor(Function.prototype, "toString");
+const toStringName = Object.getOwnPropertyDescriptor(Function.prototype.toString, "name");
+const changeToString = (to, from, name) => {
+	const withName = name === "" ? "" : `with ${name.trim()}() `;
+	const newToString = wrappedToString.bind(null, withName, from.toString());
+	Object.defineProperty(newToString, "name", toStringName);
+	const { writable, enumerable, configurable } = toStringDescriptor;
+	Object.defineProperty(to, "toString", {
+		value: newToString,
+		writable,
+		enumerable,
+		configurable
+	});
+};
+function mimicFunction(to, from, { ignoreNonConfigurable = false } = {}) {
+	const { name } = to;
+	for (const property of Reflect.ownKeys(from)) copyProperty(to, from, property, ignoreNonConfigurable);
+	changePrototype(to, from);
+	changeToString(to, from, name);
+	return to;
+}
+//#endregion
+//#region ../../node_modules/.pnpm/onetime@7.0.0/node_modules/onetime/index.js
+const calledFunctions = /* @__PURE__ */ new WeakMap();
+const onetime = (function_, options = {}) => {
+	if (typeof function_ !== "function") throw new TypeError("Expected a function");
+	let returnValue;
+	let callCount = 0;
+	const functionName = function_.displayName || function_.name || "<anonymous>";
+	const onetime = function(...arguments_) {
+		calledFunctions.set(onetime, ++callCount);
+		if (callCount === 1) {
+			returnValue = function_.apply(this, arguments_);
+			function_ = void 0;
+		} else if (options.throw === true) throw new Error(`Function \`${functionName}\` can only be called once`);
+		return returnValue;
+	};
+	mimicFunction(onetime, function_);
+	calledFunctions.set(onetime, callCount);
+	return onetime;
+};
+onetime.callCount = (function_) => {
+	if (!calledFunctions.has(function_)) throw new Error(`The given function \`${function_.name}\` is not wrapped by the \`onetime\` package`);
+	return calledFunctions.get(function_);
+};
+//#endregion
+//#region ../../node_modules/.pnpm/signal-exit@4.1.0/node_modules/signal-exit/dist/mjs/signals.js
+/**
+* This is not the set of all possible signals.
+*
+* It IS, however, the set of all signals that trigger
+* an exit on either Linux or BSD systems.  Linux is a
+* superset of the signal names supported on BSD, and
+* the unknown signals just fail to register, so we can
+* catch that easily enough.
+*
+* Windows signals are a different set, since there are
+* signals that terminate Windows processes, but don't
+* terminate (or don't even exist) on Posix systems.
+*
+* Don't bother with SIGKILL.  It's uncatchable, which
+* means that we can't fire any callbacks anyway.
+*
+* If a user does happen to register a handler on a non-
+* fatal signal like SIGWINCH or something, and then
+* exit, it'll end up firing `process.emit('exit')`, so
+* the handler will be fired anyway.
+*
+* SIGBUS, SIGFPE, SIGSEGV and SIGILL, when not raised
+* artificially, inherently leave the process in a
+* state from which it is not safe to try and enter JS
+* listeners.
+*/
+const signals = [];
+signals.push("SIGHUP", "SIGINT", "SIGTERM");
+if (process.platform !== "win32") signals.push("SIGALRM", "SIGABRT", "SIGVTALRM", "SIGXCPU", "SIGXFSZ", "SIGUSR2", "SIGTRAP", "SIGSYS", "SIGQUIT", "SIGIOT");
+if (process.platform === "linux") signals.push("SIGIO", "SIGPOLL", "SIGPWR", "SIGSTKFLT");
+//#endregion
+//#region ../../node_modules/.pnpm/signal-exit@4.1.0/node_modules/signal-exit/dist/mjs/index.js
+const processOk = (process) => !!process && typeof process === "object" && typeof process.removeListener === "function" && typeof process.emit === "function" && typeof process.reallyExit === "function" && typeof process.listeners === "function" && typeof process.kill === "function" && typeof process.pid === "number" && typeof process.on === "function";
+const kExitEmitter = Symbol.for("signal-exit emitter");
+const global = globalThis;
+const ObjectDefineProperty = Object.defineProperty.bind(Object);
+var Emitter = class {
+	emitted = {
+		afterExit: false,
+		exit: false
+	};
+	listeners = {
+		afterExit: [],
+		exit: []
+	};
+	count = 0;
+	id = Math.random();
+	constructor() {
+		if (global[kExitEmitter]) return global[kExitEmitter];
+		ObjectDefineProperty(global, kExitEmitter, {
+			value: this,
+			writable: false,
+			enumerable: false,
+			configurable: false
+		});
+	}
+	on(ev, fn) {
+		this.listeners[ev].push(fn);
+	}
+	removeListener(ev, fn) {
+		const list = this.listeners[ev];
+		const i = list.indexOf(fn);
+		/* c8 ignore start */
+		if (i === -1) return;
+		/* c8 ignore stop */
+		if (i === 0 && list.length === 1) list.length = 0;
+		else list.splice(i, 1);
+	}
+	emit(ev, code, signal) {
+		if (this.emitted[ev]) return false;
+		this.emitted[ev] = true;
+		let ret = false;
+		for (const fn of this.listeners[ev]) ret = fn(code, signal) === true || ret;
+		if (ev === "exit") ret = this.emit("afterExit", code, signal) || ret;
+		return ret;
+	}
+};
+var SignalExitBase = class {};
+const signalExitWrap = (handler) => {
+	return {
+		onExit(cb, opts) {
+			return handler.onExit(cb, opts);
+		},
+		load() {
+			return handler.load();
+		},
+		unload() {
+			return handler.unload();
+		}
+	};
+};
+var SignalExitFallback = class extends SignalExitBase {
+	onExit() {
+		return () => {};
+	}
+	load() {}
+	unload() {}
+};
+var SignalExit = class extends SignalExitBase {
+	/* c8 ignore start */
+	#hupSig = process$2.platform === "win32" ? "SIGINT" : "SIGHUP";
+	/* c8 ignore stop */
+	#emitter = new Emitter();
+	#process;
+	#originalProcessEmit;
+	#originalProcessReallyExit;
+	#sigListeners = {};
+	#loaded = false;
+	constructor(process) {
+		super();
+		this.#process = process;
+		this.#sigListeners = {};
+		for (const sig of signals) this.#sigListeners[sig] = () => {
+			const listeners = this.#process.listeners(sig);
+			let { count } = this.#emitter;
+			/* c8 ignore start */
+			const p = process;
+			if (typeof p.__signal_exit_emitter__ === "object" && typeof p.__signal_exit_emitter__.count === "number") count += p.__signal_exit_emitter__.count;
+			/* c8 ignore stop */
+			if (listeners.length === count) {
+				this.unload();
+				const ret = this.#emitter.emit("exit", null, sig);
+				/* c8 ignore start */
+				const s = sig === "SIGHUP" ? this.#hupSig : sig;
+				if (!ret) process.kill(process.pid, s);
+			}
+		};
+		this.#originalProcessReallyExit = process.reallyExit;
+		this.#originalProcessEmit = process.emit;
+	}
+	onExit(cb, opts) {
+		/* c8 ignore start */
+		if (!processOk(this.#process)) return () => {};
+		/* c8 ignore stop */
+		if (this.#loaded === false) this.load();
+		const ev = opts?.alwaysLast ? "afterExit" : "exit";
+		this.#emitter.on(ev, cb);
+		return () => {
+			this.#emitter.removeListener(ev, cb);
+			if (this.#emitter.listeners["exit"].length === 0 && this.#emitter.listeners["afterExit"].length === 0) this.unload();
+		};
+	}
+	load() {
+		if (this.#loaded) return;
+		this.#loaded = true;
+		this.#emitter.count += 1;
+		for (const sig of signals) try {
+			const fn = this.#sigListeners[sig];
+			if (fn) this.#process.on(sig, fn);
+		} catch (_) {}
+		this.#process.emit = (ev, ...a) => {
+			return this.#processEmit(ev, ...a);
+		};
+		this.#process.reallyExit = (code) => {
+			return this.#processReallyExit(code);
+		};
+	}
+	unload() {
+		if (!this.#loaded) return;
+		this.#loaded = false;
+		signals.forEach((sig) => {
+			const listener = this.#sigListeners[sig];
+			/* c8 ignore start */
+			if (!listener) throw new Error("Listener not defined for signal: " + sig);
+			/* c8 ignore stop */
+			try {
+				this.#process.removeListener(sig, listener);
+			} catch (_) {}
+			/* c8 ignore stop */
+		});
+		this.#process.emit = this.#originalProcessEmit;
+		this.#process.reallyExit = this.#originalProcessReallyExit;
+		this.#emitter.count -= 1;
+	}
+	#processReallyExit(code) {
+		/* c8 ignore start */
+		if (!processOk(this.#process)) return 0;
+		this.#process.exitCode = code || 0;
+		/* c8 ignore stop */
+		this.#emitter.emit("exit", this.#process.exitCode, null);
+		return this.#originalProcessReallyExit.call(this.#process, this.#process.exitCode);
+	}
+	#processEmit(ev, ...args) {
+		const og = this.#originalProcessEmit;
+		if (ev === "exit" && processOk(this.#process)) {
+			if (typeof args[0] === "number") this.#process.exitCode = args[0];
+			/* c8 ignore start */
+			const ret = og.call(this.#process, ev, ...args);
+			/* c8 ignore start */
+			this.#emitter.emit("exit", this.#process.exitCode, null);
+			/* c8 ignore stop */
+			return ret;
+		} else return og.call(this.#process, ev, ...args);
+	}
+};
+const process$2 = globalThis.process;
+const { onExit, load, unload } = signalExitWrap(processOk(process$2) ? new SignalExit(process$2) : new SignalExitFallback());
+//#endregion
+//#region ../../node_modules/.pnpm/restore-cursor@5.1.0/node_modules/restore-cursor/index.js
+const terminal = process$1.stderr.isTTY ? process$1.stderr : process$1.stdout.isTTY ? process$1.stdout : void 0;
+const restoreCursor = terminal ? onetime(() => {
+	onExit(() => {
+		terminal.write("\x1B[?25h");
+	}, { alwaysLast: true });
+}) : () => {};
+//#endregion
+//#region ../../node_modules/.pnpm/cli-cursor@5.0.0/node_modules/cli-cursor/index.js
+let isHidden = false;
+const cliCursor = {};
+cliCursor.show = (writableStream = process$1.stderr) => {
+	if (!writableStream.isTTY) return;
+	isHidden = false;
+	writableStream.write("\x1B[?25h");
+};
+cliCursor.hide = (writableStream = process$1.stderr) => {
+	if (!writableStream.isTTY) return;
+	restoreCursor();
+	isHidden = true;
+	writableStream.write("\x1B[?25l");
+};
+cliCursor.toggle = (force, writableStream) => {
+	if (force !== void 0) isHidden = force;
+	if (isHidden) cliCursor.show(writableStream);
+	else cliCursor.hide(writableStream);
+};
+//#endregion
+//#region ../../node_modules/.pnpm/cli-spinners@3.4.0/node_modules/cli-spinners/index.js
+var cli_spinners_default = {
+	dots: {
+		"interval": 80,
+		"frames": [
+			"⠋",
+			"⠙",
+			"⠹",
+			"⠸",
+			"⠼",
+			"⠴",
+			"⠦",
+			"⠧",
+			"⠇",
+			"⠏"
+		]
+	},
+	dots2: {
+		"interval": 80,
+		"frames": [
+			"⣾",
+			"⣽",
+			"⣻",
+			"⢿",
+			"⡿",
+			"⣟",
+			"⣯",
+			"⣷"
+		]
+	},
+	dots3: {
+		"interval": 80,
+		"frames": [
+			"⠋",
+			"⠙",
+			"⠚",
+			"⠞",
+			"⠖",
+			"⠦",
+			"⠴",
+			"⠲",
+			"⠳",
+			"⠓"
+		]
+	},
+	dots4: {
+		"interval": 80,
+		"frames": [
+			"⠄",
+			"⠆",
+			"⠇",
+			"⠋",
+			"⠙",
+			"⠸",
+			"⠰",
+			"⠠",
+			"⠰",
+			"⠸",
+			"⠙",
+			"⠋",
+			"⠇",
+			"⠆"
+		]
+	},
+	dots5: {
+		"interval": 80,
+		"frames": [
+			"⠋",
+			"⠙",
+			"⠚",
+			"⠒",
+			"⠂",
+			"⠂",
+			"⠒",
+			"⠲",
+			"⠴",
+			"⠦",
+			"⠖",
+			"⠒",
+			"⠐",
+			"⠐",
+			"⠒",
+			"⠓",
+			"⠋"
+		]
+	},
+	dots6: {
+		"interval": 80,
+		"frames": [
+			"⠁",
+			"⠉",
+			"⠙",
+			"⠚",
+			"⠒",
+			"⠂",
+			"⠂",
+			"⠒",
+			"⠲",
+			"⠴",
+			"⠤",
+			"⠄",
+			"⠄",
+			"⠤",
+			"⠴",
+			"⠲",
+			"⠒",
+			"⠂",
+			"⠂",
+			"⠒",
+			"⠚",
+			"⠙",
+			"⠉",
+			"⠁"
+		]
+	},
+	dots7: {
+		"interval": 80,
+		"frames": [
+			"⠈",
+			"⠉",
+			"⠋",
+			"⠓",
+			"⠒",
+			"⠐",
+			"⠐",
+			"⠒",
+			"⠖",
+			"⠦",
+			"⠤",
+			"⠠",
+			"⠠",
+			"⠤",
+			"⠦",
+			"⠖",
+			"⠒",
+			"⠐",
+			"⠐",
+			"⠒",
+			"⠓",
+			"⠋",
+			"⠉",
+			"⠈"
+		]
+	},
+	dots8: {
+		"interval": 80,
+		"frames": [
+			"⠁",
+			"⠁",
+			"⠉",
+			"⠙",
+			"⠚",
+			"⠒",
+			"⠂",
+			"⠂",
+			"⠒",
+			"⠲",
+			"⠴",
+			"⠤",
+			"⠄",
+			"⠄",
+			"⠤",
+			"⠠",
+			"⠠",
+			"⠤",
+			"⠦",
+			"⠖",
+			"⠒",
+			"⠐",
+			"⠐",
+			"⠒",
+			"⠓",
+			"⠋",
+			"⠉",
+			"⠈",
+			"⠈"
+		]
+	},
+	dots9: {
+		"interval": 80,
+		"frames": [
+			"⢹",
+			"⢺",
+			"⢼",
+			"⣸",
+			"⣇",
+			"⡧",
+			"⡗",
+			"⡏"
+		]
+	},
+	dots10: {
+		"interval": 80,
+		"frames": [
+			"⢄",
+			"⢂",
+			"⢁",
+			"⡁",
+			"⡈",
+			"⡐",
+			"⡠"
+		]
+	},
+	dots11: {
+		"interval": 100,
+		"frames": [
+			"⠁",
+			"⠂",
+			"⠄",
+			"⡀",
+			"⢀",
+			"⠠",
+			"⠐",
+			"⠈"
+		]
+	},
+	dots12: {
+		"interval": 80,
+		"frames": [
+			"⢀⠀",
+			"⡀⠀",
+			"⠄⠀",
+			"⢂⠀",
+			"⡂⠀",
+			"⠅⠀",
+			"⢃⠀",
+			"⡃⠀",
+			"⠍⠀",
+			"⢋⠀",
+			"⡋⠀",
+			"⠍⠁",
+			"⢋⠁",
+			"⡋⠁",
+			"⠍⠉",
+			"⠋⠉",
+			"⠋⠉",
+			"⠉⠙",
+			"⠉⠙",
+			"⠉⠩",
+			"⠈⢙",
+			"⠈⡙",
+			"⢈⠩",
+			"⡀⢙",
+			"⠄⡙",
+			"⢂⠩",
+			"⡂⢘",
+			"⠅⡘",
+			"⢃⠨",
+			"⡃⢐",
+			"⠍⡐",
+			"⢋⠠",
+			"⡋⢀",
+			"⠍⡁",
+			"⢋⠁",
+			"⡋⠁",
+			"⠍⠉",
+			"⠋⠉",
+			"⠋⠉",
+			"⠉⠙",
+			"⠉⠙",
+			"⠉⠩",
+			"⠈⢙",
+			"⠈⡙",
+			"⠈⠩",
+			"⠀⢙",
+			"⠀⡙",
+			"⠀⠩",
+			"⠀⢘",
+			"⠀⡘",
+			"⠀⠨",
+			"⠀⢐",
+			"⠀⡐",
+			"⠀⠠",
+			"⠀⢀",
+			"⠀⡀"
+		]
+	},
+	dots13: {
+		"interval": 80,
+		"frames": [
+			"⣼",
+			"⣹",
+			"⢻",
+			"⠿",
+			"⡟",
+			"⣏",
+			"⣧",
+			"⣶"
+		]
+	},
+	dots14: {
+		"interval": 80,
+		"frames": [
+			"⠉⠉",
+			"⠈⠙",
+			"⠀⠹",
+			"⠀⢸",
+			"⠀⣰",
+			"⢀⣠",
+			"⣀⣀",
+			"⣄⡀",
+			"⣆⠀",
+			"⡇⠀",
+			"⠏⠀",
+			"⠋⠁"
+		]
+	},
+	dots8Bit: {
+		"interval": 80,
+		"frames": [
+			"⠀",
+			"⠁",
+			"⠂",
+			"⠃",
+			"⠄",
+			"⠅",
+			"⠆",
+			"⠇",
+			"⡀",
+			"⡁",
+			"⡂",
+			"⡃",
+			"⡄",
+			"⡅",
+			"⡆",
+			"⡇",
+			"⠈",
+			"⠉",
+			"⠊",
+			"⠋",
+			"⠌",
+			"⠍",
+			"⠎",
+			"⠏",
+			"⡈",
+			"⡉",
+			"⡊",
+			"⡋",
+			"⡌",
+			"⡍",
+			"⡎",
+			"⡏",
+			"⠐",
+			"⠑",
+			"⠒",
+			"⠓",
+			"⠔",
+			"⠕",
+			"⠖",
+			"⠗",
+			"⡐",
+			"⡑",
+			"⡒",
+			"⡓",
+			"⡔",
+			"⡕",
+			"⡖",
+			"⡗",
+			"⠘",
+			"⠙",
+			"⠚",
+			"⠛",
+			"⠜",
+			"⠝",
+			"⠞",
+			"⠟",
+			"⡘",
+			"⡙",
+			"⡚",
+			"⡛",
+			"⡜",
+			"⡝",
+			"⡞",
+			"⡟",
+			"⠠",
+			"⠡",
+			"⠢",
+			"⠣",
+			"⠤",
+			"⠥",
+			"⠦",
+			"⠧",
+			"⡠",
+			"⡡",
+			"⡢",
+			"⡣",
+			"⡤",
+			"⡥",
+			"⡦",
+			"⡧",
+			"⠨",
+			"⠩",
+			"⠪",
+			"⠫",
+			"⠬",
+			"⠭",
+			"⠮",
+			"⠯",
+			"⡨",
+			"⡩",
+			"⡪",
+			"⡫",
+			"⡬",
+			"⡭",
+			"⡮",
+			"⡯",
+			"⠰",
+			"⠱",
+			"⠲",
+			"⠳",
+			"⠴",
+			"⠵",
+			"⠶",
+			"⠷",
+			"⡰",
+			"⡱",
+			"⡲",
+			"⡳",
+			"⡴",
+			"⡵",
+			"⡶",
+			"⡷",
+			"⠸",
+			"⠹",
+			"⠺",
+			"⠻",
+			"⠼",
+			"⠽",
+			"⠾",
+			"⠿",
+			"⡸",
+			"⡹",
+			"⡺",
+			"⡻",
+			"⡼",
+			"⡽",
+			"⡾",
+			"⡿",
+			"⢀",
+			"⢁",
+			"⢂",
+			"⢃",
+			"⢄",
+			"⢅",
+			"⢆",
+			"⢇",
+			"⣀",
+			"⣁",
+			"⣂",
+			"⣃",
+			"⣄",
+			"⣅",
+			"⣆",
+			"⣇",
+			"⢈",
+			"⢉",
+			"⢊",
+			"⢋",
+			"⢌",
+			"⢍",
+			"⢎",
+			"⢏",
+			"⣈",
+			"⣉",
+			"⣊",
+			"⣋",
+			"⣌",
+			"⣍",
+			"⣎",
+			"⣏",
+			"⢐",
+			"⢑",
+			"⢒",
+			"⢓",
+			"⢔",
+			"⢕",
+			"⢖",
+			"⢗",
+			"⣐",
+			"⣑",
+			"⣒",
+			"⣓",
+			"⣔",
+			"⣕",
+			"⣖",
+			"⣗",
+			"⢘",
+			"⢙",
+			"⢚",
+			"⢛",
+			"⢜",
+			"⢝",
+			"⢞",
+			"⢟",
+			"⣘",
+			"⣙",
+			"⣚",
+			"⣛",
+			"⣜",
+			"⣝",
+			"⣞",
+			"⣟",
+			"⢠",
+			"⢡",
+			"⢢",
+			"⢣",
+			"⢤",
+			"⢥",
+			"⢦",
+			"⢧",
+			"⣠",
+			"⣡",
+			"⣢",
+			"⣣",
+			"⣤",
+			"⣥",
+			"⣦",
+			"⣧",
+			"⢨",
+			"⢩",
+			"⢪",
+			"⢫",
+			"⢬",
+			"⢭",
+			"⢮",
+			"⢯",
+			"⣨",
+			"⣩",
+			"⣪",
+			"⣫",
+			"⣬",
+			"⣭",
+			"⣮",
+			"⣯",
+			"⢰",
+			"⢱",
+			"⢲",
+			"⢳",
+			"⢴",
+			"⢵",
+			"⢶",
+			"⢷",
+			"⣰",
+			"⣱",
+			"⣲",
+			"⣳",
+			"⣴",
+			"⣵",
+			"⣶",
+			"⣷",
+			"⢸",
+			"⢹",
+			"⢺",
+			"⢻",
+			"⢼",
+			"⢽",
+			"⢾",
+			"⢿",
+			"⣸",
+			"⣹",
+			"⣺",
+			"⣻",
+			"⣼",
+			"⣽",
+			"⣾",
+			"⣿"
+		]
+	},
+	dotsCircle: {
+		"interval": 80,
+		"frames": [
+			"⢎ ",
+			"⠎⠁",
+			"⠊⠑",
+			"⠈⠱",
+			" ⡱",
+			"⢀⡰",
+			"⢄⡠",
+			"⢆⡀"
+		]
+	},
+	sand: {
+		"interval": 80,
+		"frames": [
+			"⠁",
+			"⠂",
+			"⠄",
+			"⡀",
+			"⡈",
+			"⡐",
+			"⡠",
+			"⣀",
+			"⣁",
+			"⣂",
+			"⣄",
+			"⣌",
+			"⣔",
+			"⣤",
+			"⣥",
+			"⣦",
+			"⣮",
+			"⣶",
+			"⣷",
+			"⣿",
+			"⡿",
+			"⠿",
+			"⢟",
+			"⠟",
+			"⡛",
+			"⠛",
+			"⠫",
+			"⢋",
+			"⠋",
+			"⠍",
+			"⡉",
+			"⠉",
+			"⠑",
+			"⠡",
+			"⢁"
+		]
+	},
+	line: {
+		"interval": 130,
+		"frames": [
+			"-",
+			"\\",
+			"|",
+			"/"
+		]
+	},
+	line2: {
+		"interval": 100,
+		"frames": [
+			"⠂",
+			"-",
+			"–",
+			"—",
+			"–",
+			"-"
+		]
+	},
+	rollingLine: {
+		"interval": 80,
+		"frames": [
+			"/  ",
+			" - ",
+			" \\ ",
+			"  |",
+			"  |",
+			" \\ ",
+			" - ",
+			"/  "
+		]
+	},
+	pipe: {
+		"interval": 100,
+		"frames": [
+			"┤",
+			"┘",
+			"┴",
+			"└",
+			"├",
+			"┌",
+			"┬",
+			"┐"
+		]
+	},
+	simpleDots: {
+		"interval": 400,
+		"frames": [
+			".  ",
+			".. ",
+			"...",
+			"   "
+		]
+	},
+	simpleDotsScrolling: {
+		"interval": 200,
+		"frames": [
+			".  ",
+			".. ",
+			"...",
+			" ..",
+			"  .",
+			"   "
+		]
+	},
+	star: {
+		"interval": 70,
+		"frames": [
+			"✶",
+			"✸",
+			"✹",
+			"✺",
+			"✹",
+			"✷"
+		]
+	},
+	star2: {
+		"interval": 80,
+		"frames": [
+			"+",
+			"x",
+			"*"
+		]
+	},
+	flip: {
+		"interval": 70,
+		"frames": [
+			"_",
+			"_",
+			"_",
+			"-",
+			"`",
+			"`",
+			"'",
+			"´",
+			"-",
+			"_",
+			"_",
+			"_"
+		]
+	},
+	hamburger: {
+		"interval": 100,
+		"frames": [
+			"☱",
+			"☲",
+			"☴"
+		]
+	},
+	growVertical: {
+		"interval": 120,
+		"frames": [
+			"▁",
+			"▃",
+			"▄",
+			"▅",
+			"▆",
+			"▇",
+			"▆",
+			"▅",
+			"▄",
+			"▃"
+		]
+	},
+	growHorizontal: {
+		"interval": 120,
+		"frames": [
+			"▏",
+			"▎",
+			"▍",
+			"▌",
+			"▋",
+			"▊",
+			"▉",
+			"▊",
+			"▋",
+			"▌",
+			"▍",
+			"▎"
+		]
+	},
+	balloon: {
+		"interval": 140,
+		"frames": [
+			" ",
+			".",
+			"o",
+			"O",
+			"@",
+			"*",
+			" "
+		]
+	},
+	balloon2: {
+		"interval": 120,
+		"frames": [
+			".",
+			"o",
+			"O",
+			"°",
+			"O",
+			"o",
+			"."
+		]
+	},
+	noise: {
+		"interval": 100,
+		"frames": [
+			"▓",
+			"▒",
+			"░"
+		]
+	},
+	bounce: {
+		"interval": 120,
+		"frames": [
+			"⠁",
+			"⠂",
+			"⠄",
+			"⠂"
+		]
+	},
+	boxBounce: {
+		"interval": 120,
+		"frames": [
+			"▖",
+			"▘",
+			"▝",
+			"▗"
+		]
+	},
+	boxBounce2: {
+		"interval": 100,
+		"frames": [
+			"▌",
+			"▀",
+			"▐",
+			"▄"
+		]
+	},
+	triangle: {
+		"interval": 50,
+		"frames": [
+			"◢",
+			"◣",
+			"◤",
+			"◥"
+		]
+	},
+	binary: {
+		"interval": 80,
+		"frames": [
+			"010010",
+			"001100",
+			"100101",
+			"111010",
+			"111101",
+			"010111",
+			"101011",
+			"111000",
+			"110011",
+			"110101"
+		]
+	},
+	arc: {
+		"interval": 100,
+		"frames": [
+			"◜",
+			"◠",
+			"◝",
+			"◞",
+			"◡",
+			"◟"
+		]
+	},
+	circle: {
+		"interval": 120,
+		"frames": [
+			"◡",
+			"⊙",
+			"◠"
+		]
+	},
+	squareCorners: {
+		"interval": 180,
+		"frames": [
+			"◰",
+			"◳",
+			"◲",
+			"◱"
+		]
+	},
+	circleQuarters: {
+		"interval": 120,
+		"frames": [
+			"◴",
+			"◷",
+			"◶",
+			"◵"
+		]
+	},
+	circleHalves: {
+		"interval": 50,
+		"frames": [
+			"◐",
+			"◓",
+			"◑",
+			"◒"
+		]
+	},
+	squish: {
+		"interval": 100,
+		"frames": ["╫", "╪"]
+	},
+	toggle: {
+		"interval": 250,
+		"frames": ["⊶", "⊷"]
+	},
+	toggle2: {
+		"interval": 80,
+		"frames": ["▫", "▪"]
+	},
+	toggle3: {
+		"interval": 120,
+		"frames": ["□", "■"]
+	},
+	toggle4: {
+		"interval": 100,
+		"frames": [
+			"■",
+			"□",
+			"▪",
+			"▫"
+		]
+	},
+	toggle5: {
+		"interval": 100,
+		"frames": ["▮", "▯"]
+	},
+	toggle6: {
+		"interval": 300,
+		"frames": ["ဝ", "၀"]
+	},
+	toggle7: {
+		"interval": 80,
+		"frames": ["⦾", "⦿"]
+	},
+	toggle8: {
+		"interval": 100,
+		"frames": ["◍", "◌"]
+	},
+	toggle9: {
+		"interval": 100,
+		"frames": ["◉", "◎"]
+	},
+	toggle10: {
+		"interval": 100,
+		"frames": [
+			"㊂",
+			"㊀",
+			"㊁"
+		]
+	},
+	toggle11: {
+		"interval": 50,
+		"frames": ["⧇", "⧆"]
+	},
+	toggle12: {
+		"interval": 120,
+		"frames": ["☗", "☖"]
+	},
+	toggle13: {
+		"interval": 80,
+		"frames": [
+			"=",
+			"*",
+			"-"
+		]
+	},
+	arrow: {
+		"interval": 100,
+		"frames": [
+			"←",
+			"↖",
+			"↑",
+			"↗",
+			"→",
+			"↘",
+			"↓",
+			"↙"
+		]
+	},
+	arrow2: {
+		"interval": 80,
+		"frames": [
+			"⬆️ ",
+			"↗️ ",
+			"➡️ ",
+			"↘️ ",
+			"⬇️ ",
+			"↙️ ",
+			"⬅️ ",
+			"↖️ "
+		]
+	},
+	arrow3: {
+		"interval": 120,
+		"frames": [
+			"▹▹▹▹▹",
+			"▸▹▹▹▹",
+			"▹▸▹▹▹",
+			"▹▹▸▹▹",
+			"▹▹▹▸▹",
+			"▹▹▹▹▸"
+		]
+	},
+	bouncingBar: {
+		"interval": 80,
+		"frames": [
+			"[    ]",
+			"[=   ]",
+			"[==  ]",
+			"[=== ]",
+			"[====]",
+			"[ ===]",
+			"[  ==]",
+			"[   =]",
+			"[    ]",
+			"[   =]",
+			"[  ==]",
+			"[ ===]",
+			"[====]",
+			"[=== ]",
+			"[==  ]",
+			"[=   ]"
+		]
+	},
+	bouncingBall: {
+		"interval": 80,
+		"frames": [
+			"( ●    )",
+			"(  ●   )",
+			"(   ●  )",
+			"(    ● )",
+			"(     ●)",
+			"(    ● )",
+			"(   ●  )",
+			"(  ●   )",
+			"( ●    )",
+			"(●     )"
+		]
+	},
+	smiley: {
+		"interval": 200,
+		"frames": ["😄 ", "😝 "]
+	},
+	monkey: {
+		"interval": 300,
+		"frames": [
+			"🙈 ",
+			"🙈 ",
+			"🙉 ",
+			"🙊 "
+		]
+	},
+	hearts: {
+		"interval": 100,
+		"frames": [
+			"💛 ",
+			"💙 ",
+			"💜 ",
+			"💚 ",
+			"💗 "
+		]
+	},
+	clock: {
+		"interval": 100,
+		"frames": [
+			"🕛 ",
+			"🕐 ",
+			"🕑 ",
+			"🕒 ",
+			"🕓 ",
+			"🕔 ",
+			"🕕 ",
+			"🕖 ",
+			"🕗 ",
+			"🕘 ",
+			"🕙 ",
+			"🕚 "
+		]
+	},
+	earth: {
+		"interval": 180,
+		"frames": [
+			"🌍 ",
+			"🌎 ",
+			"🌏 "
+		]
+	},
+	material: {
+		"interval": 17,
+		"frames": [
+			"█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"███▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"████▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"███████▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"████████▁▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"██████████▁▁▁▁▁▁▁▁▁▁",
+			"███████████▁▁▁▁▁▁▁▁▁",
+			"█████████████▁▁▁▁▁▁▁",
+			"██████████████▁▁▁▁▁▁",
+			"██████████████▁▁▁▁▁▁",
+			"▁██████████████▁▁▁▁▁",
+			"▁██████████████▁▁▁▁▁",
+			"▁██████████████▁▁▁▁▁",
+			"▁▁██████████████▁▁▁▁",
+			"▁▁▁██████████████▁▁▁",
+			"▁▁▁▁█████████████▁▁▁",
+			"▁▁▁▁██████████████▁▁",
+			"▁▁▁▁██████████████▁▁",
+			"▁▁▁▁▁██████████████▁",
+			"▁▁▁▁▁██████████████▁",
+			"▁▁▁▁▁██████████████▁",
+			"▁▁▁▁▁▁██████████████",
+			"▁▁▁▁▁▁██████████████",
+			"▁▁▁▁▁▁▁█████████████",
+			"▁▁▁▁▁▁▁█████████████",
+			"▁▁▁▁▁▁▁▁████████████",
+			"▁▁▁▁▁▁▁▁████████████",
+			"▁▁▁▁▁▁▁▁▁███████████",
+			"▁▁▁▁▁▁▁▁▁███████████",
+			"▁▁▁▁▁▁▁▁▁▁██████████",
+			"▁▁▁▁▁▁▁▁▁▁██████████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁████████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁███████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁██████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████",
+			"█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████",
+			"██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███",
+			"██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███",
+			"███▁▁▁▁▁▁▁▁▁▁▁▁▁▁███",
+			"████▁▁▁▁▁▁▁▁▁▁▁▁▁▁██",
+			"█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"██████▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"████████▁▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"█████████▁▁▁▁▁▁▁▁▁▁▁",
+			"███████████▁▁▁▁▁▁▁▁▁",
+			"████████████▁▁▁▁▁▁▁▁",
+			"████████████▁▁▁▁▁▁▁▁",
+			"██████████████▁▁▁▁▁▁",
+			"██████████████▁▁▁▁▁▁",
+			"▁██████████████▁▁▁▁▁",
+			"▁██████████████▁▁▁▁▁",
+			"▁▁▁█████████████▁▁▁▁",
+			"▁▁▁▁▁████████████▁▁▁",
+			"▁▁▁▁▁████████████▁▁▁",
+			"▁▁▁▁▁▁███████████▁▁▁",
+			"▁▁▁▁▁▁▁▁█████████▁▁▁",
+			"▁▁▁▁▁▁▁▁█████████▁▁▁",
+			"▁▁▁▁▁▁▁▁▁█████████▁▁",
+			"▁▁▁▁▁▁▁▁▁█████████▁▁",
+			"▁▁▁▁▁▁▁▁▁▁█████████▁",
+			"▁▁▁▁▁▁▁▁▁▁▁████████▁",
+			"▁▁▁▁▁▁▁▁▁▁▁████████▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁███████▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁███████▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁███████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁███████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+			"▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁"
+		]
+	},
+	moon: {
+		"interval": 80,
+		"frames": [
+			"🌑 ",
+			"🌒 ",
+			"🌓 ",
+			"🌔 ",
+			"🌕 ",
+			"🌖 ",
+			"🌗 ",
+			"🌘 "
+		]
+	},
+	runner: {
+		"interval": 140,
+		"frames": ["🚶 ", "🏃 "]
+	},
+	pong: {
+		"interval": 80,
+		"frames": [
+			"▐⠂       ▌",
+			"▐⠈       ▌",
+			"▐ ⠂      ▌",
+			"▐ ⠠      ▌",
+			"▐  ⡀     ▌",
+			"▐  ⠠     ▌",
+			"▐   ⠂    ▌",
+			"▐   ⠈    ▌",
+			"▐    ⠂   ▌",
+			"▐    ⠠   ▌",
+			"▐     ⡀  ▌",
+			"▐     ⠠  ▌",
+			"▐      ⠂ ▌",
+			"▐      ⠈ ▌",
+			"▐       ⠂▌",
+			"▐       ⠠▌",
+			"▐       ⡀▌",
+			"▐      ⠠ ▌",
+			"▐      ⠂ ▌",
+			"▐     ⠈  ▌",
+			"▐     ⠂  ▌",
+			"▐    ⠠   ▌",
+			"▐    ⡀   ▌",
+			"▐   ⠠    ▌",
+			"▐   ⠂    ▌",
+			"▐  ⠈     ▌",
+			"▐  ⠂     ▌",
+			"▐ ⠠      ▌",
+			"▐ ⡀      ▌",
+			"▐⠠       ▌"
+		]
+	},
+	shark: {
+		"interval": 120,
+		"frames": [
+			"▐|\\____________▌",
+			"▐_|\\___________▌",
+			"▐__|\\__________▌",
+			"▐___|\\_________▌",
+			"▐____|\\________▌",
+			"▐_____|\\_______▌",
+			"▐______|\\______▌",
+			"▐_______|\\_____▌",
+			"▐________|\\____▌",
+			"▐_________|\\___▌",
+			"▐__________|\\__▌",
+			"▐___________|\\_▌",
+			"▐____________|\\▌",
+			"▐____________/|▌",
+			"▐___________/|_▌",
+			"▐__________/|__▌",
+			"▐_________/|___▌",
+			"▐________/|____▌",
+			"▐_______/|_____▌",
+			"▐______/|______▌",
+			"▐_____/|_______▌",
+			"▐____/|________▌",
+			"▐___/|_________▌",
+			"▐__/|__________▌",
+			"▐_/|___________▌",
+			"▐/|____________▌"
+		]
+	},
+	dqpb: {
+		"interval": 100,
+		"frames": [
+			"d",
+			"q",
+			"p",
+			"b"
+		]
+	},
+	weather: {
+		"interval": 100,
+		"frames": [
+			"☀️ ",
+			"☀️ ",
+			"☀️ ",
+			"🌤 ",
+			"⛅️ ",
+			"🌥 ",
+			"☁️ ",
+			"🌧 ",
+			"🌨 ",
+			"🌧 ",
+			"🌨 ",
+			"🌧 ",
+			"🌨 ",
+			"⛈ ",
+			"🌨 ",
+			"🌧 ",
+			"🌨 ",
+			"☁️ ",
+			"🌥 ",
+			"⛅️ ",
+			"🌤 ",
+			"☀️ ",
+			"☀️ "
+		]
+	},
+	christmas: {
+		"interval": 400,
+		"frames": ["🌲", "🎄"]
+	},
+	grenade: {
+		"interval": 80,
+		"frames": [
+			"،  ",
+			"′  ",
+			" ´ ",
+			" ‾ ",
+			"  ⸌",
+			"  ⸊",
+			"  |",
+			"  ⁎",
+			"  ⁕",
+			" ෴ ",
+			"  ⁓",
+			"   ",
+			"   ",
+			"   "
+		]
+	},
+	point: {
+		"interval": 125,
+		"frames": [
+			"∙∙∙",
+			"●∙∙",
+			"∙●∙",
+			"∙∙●",
+			"∙∙∙"
+		]
+	},
+	layer: {
+		"interval": 150,
+		"frames": [
+			"-",
+			"=",
+			"≡"
+		]
+	},
+	betaWave: {
+		"interval": 80,
+		"frames": [
+			"ρββββββ",
+			"βρβββββ",
+			"ββρββββ",
+			"βββρβββ",
+			"ββββρββ",
+			"βββββρβ",
+			"ββββββρ"
+		]
+	},
+	fingerDance: {
+		"interval": 160,
+		"frames": [
+			"🤘 ",
+			"🤟 ",
+			"🖖 ",
+			"✋ ",
+			"🤚 ",
+			"👆 "
+		]
+	},
+	fistBump: {
+		"interval": 80,
+		"frames": [
+			"🤜　　　　🤛 ",
+			"🤜　　　　🤛 ",
+			"🤜　　　　🤛 ",
+			"　🤜　　🤛　 ",
+			"　　🤜🤛　　 ",
+			"　🤜✨🤛　　 ",
+			"🤜　✨　🤛　 "
+		]
+	},
+	soccerHeader: {
+		"interval": 80,
+		"frames": [
+			" 🧑⚽️       🧑 ",
+			"🧑  ⚽️      🧑 ",
+			"🧑   ⚽️     🧑 ",
+			"🧑    ⚽️    🧑 ",
+			"🧑     ⚽️   🧑 ",
+			"🧑      ⚽️  🧑 ",
+			"🧑       ⚽️🧑  ",
+			"🧑      ⚽️  🧑 ",
+			"🧑     ⚽️   🧑 ",
+			"🧑    ⚽️    🧑 ",
+			"🧑   ⚽️     🧑 ",
+			"🧑  ⚽️      🧑 "
+		]
+	},
+	mindblown: {
+		"interval": 160,
+		"frames": [
+			"😐 ",
+			"😐 ",
+			"😮 ",
+			"😮 ",
+			"😦 ",
+			"😦 ",
+			"😧 ",
+			"😧 ",
+			"🤯 ",
+			"💥 ",
+			"✨ ",
+			"　 ",
+			"　 ",
+			"　 "
+		]
+	},
+	speaker: {
+		"interval": 160,
+		"frames": [
+			"🔈 ",
+			"🔉 ",
+			"🔊 ",
+			"🔉 "
+		]
+	},
+	orangePulse: {
+		"interval": 100,
+		"frames": [
+			"🔸 ",
+			"🔶 ",
+			"🟠 ",
+			"🟠 ",
+			"🔶 "
+		]
+	},
+	bluePulse: {
+		"interval": 100,
+		"frames": [
+			"🔹 ",
+			"🔷 ",
+			"🔵 ",
+			"🔵 ",
+			"🔷 "
+		]
+	},
+	orangeBluePulse: {
+		"interval": 100,
+		"frames": [
+			"🔸 ",
+			"🔶 ",
+			"🟠 ",
+			"🟠 ",
+			"🔶 ",
+			"🔹 ",
+			"🔷 ",
+			"🔵 ",
+			"🔵 ",
+			"🔷 "
+		]
+	},
+	timeTravel: {
+		"interval": 100,
+		"frames": [
+			"🕛 ",
+			"🕚 ",
+			"🕙 ",
+			"🕘 ",
+			"🕗 ",
+			"🕖 ",
+			"🕕 ",
+			"🕔 ",
+			"🕓 ",
+			"🕒 ",
+			"🕑 ",
+			"🕐 "
+		]
+	},
+	aesthetic: {
+		"interval": 80,
+		"frames": [
+			"▰▱▱▱▱▱▱",
+			"▰▰▱▱▱▱▱",
+			"▰▰▰▱▱▱▱",
+			"▰▰▰▰▱▱▱",
+			"▰▰▰▰▰▱▱",
+			"▰▰▰▰▰▰▱",
+			"▰▰▰▰▰▰▰",
+			"▰▱▱▱▱▱▱"
+		]
+	},
+	dwarfFortress: {
+		"interval": 80,
+		"frames": [
+			" ██████£££  ",
+			"☺██████£££  ",
+			"☺██████£££  ",
+			"☺▓█████£££  ",
+			"☺▓█████£££  ",
+			"☺▒█████£££  ",
+			"☺▒█████£££  ",
+			"☺░█████£££  ",
+			"☺░█████£££  ",
+			"☺ █████£££  ",
+			" ☺█████£££  ",
+			" ☺█████£££  ",
+			" ☺▓████£££  ",
+			" ☺▓████£££  ",
+			" ☺▒████£££  ",
+			" ☺▒████£££  ",
+			" ☺░████£££  ",
+			" ☺░████£££  ",
+			" ☺ ████£££  ",
+			"  ☺████£££  ",
+			"  ☺████£££  ",
+			"  ☺▓███£££  ",
+			"  ☺▓███£££  ",
+			"  ☺▒███£££  ",
+			"  ☺▒███£££  ",
+			"  ☺░███£££  ",
+			"  ☺░███£££  ",
+			"  ☺ ███£££  ",
+			"   ☺███£££  ",
+			"   ☺███£££  ",
+			"   ☺▓██£££  ",
+			"   ☺▓██£££  ",
+			"   ☺▒██£££  ",
+			"   ☺▒██£££  ",
+			"   ☺░██£££  ",
+			"   ☺░██£££  ",
+			"   ☺ ██£££  ",
+			"    ☺██£££  ",
+			"    ☺██£££  ",
+			"    ☺▓█£££  ",
+			"    ☺▓█£££  ",
+			"    ☺▒█£££  ",
+			"    ☺▒█£££  ",
+			"    ☺░█£££  ",
+			"    ☺░█£££  ",
+			"    ☺ █£££  ",
+			"     ☺█£££  ",
+			"     ☺█£££  ",
+			"     ☺▓£££  ",
+			"     ☺▓£££  ",
+			"     ☺▒£££  ",
+			"     ☺▒£££  ",
+			"     ☺░£££  ",
+			"     ☺░£££  ",
+			"     ☺ £££  ",
+			"      ☺£££  ",
+			"      ☺£££  ",
+			"      ☺▓££  ",
+			"      ☺▓££  ",
+			"      ☺▒££  ",
+			"      ☺▒££  ",
+			"      ☺░££  ",
+			"      ☺░££  ",
+			"      ☺ ££  ",
+			"       ☺££  ",
+			"       ☺££  ",
+			"       ☺▓£  ",
+			"       ☺▓£  ",
+			"       ☺▒£  ",
+			"       ☺▒£  ",
+			"       ☺░£  ",
+			"       ☺░£  ",
+			"       ☺ £  ",
+			"        ☺£  ",
+			"        ☺£  ",
+			"        ☺▓  ",
+			"        ☺▓  ",
+			"        ☺▒  ",
+			"        ☺▒  ",
+			"        ☺░  ",
+			"        ☺░  ",
+			"        ☺   ",
+			"        ☺  &",
+			"        ☺ ☼&",
+			"       ☺ ☼ &",
+			"       ☺☼  &",
+			"      ☺☼  & ",
+			"      ‼   & ",
+			"     ☺   &  ",
+			"    ‼    &  ",
+			"   ☺    &   ",
+			"  ‼     &   ",
+			" ☺     &    ",
+			"‼      &    ",
+			"      &     ",
+			"      &     ",
+			"     &   ░  ",
+			"     &   ▒  ",
+			"    &    ▓  ",
+			"    &    £  ",
+			"   &    ░£  ",
+			"   &    ▒£  ",
+			"  &     ▓£  ",
+			"  &     ££  ",
+			" &     ░££  ",
+			" &     ▒££  ",
+			"&      ▓££  ",
+			"&      £££  ",
+			"      ░£££  ",
+			"      ▒£££  ",
+			"      ▓£££  ",
+			"      █£££  ",
+			"     ░█£££  ",
+			"     ▒█£££  ",
+			"     ▓█£££  ",
+			"     ██£££  ",
+			"    ░██£££  ",
+			"    ▒██£££  ",
+			"    ▓██£££  ",
+			"    ███£££  ",
+			"   ░███£££  ",
+			"   ▒███£££  ",
+			"   ▓███£££  ",
+			"   ████£££  ",
+			"  ░████£££  ",
+			"  ▒████£££  ",
+			"  ▓████£££  ",
+			"  █████£££  ",
+			" ░█████£££  ",
+			" ▒█████£££  ",
+			" ▓█████£££  ",
+			" ██████£££  ",
+			" ██████£££  "
+		]
+	},
+	fish: {
+		"interval": 80,
+		"frames": [
+			"~~~~~~~~~~~~~~~~~~~~",
+			"> ~~~~~~~~~~~~~~~~~~",
+			"º> ~~~~~~~~~~~~~~~~~",
+			"(º> ~~~~~~~~~~~~~~~~",
+			"((º> ~~~~~~~~~~~~~~~",
+			"<((º> ~~~~~~~~~~~~~~",
+			"><((º> ~~~~~~~~~~~~~",
+			" ><((º> ~~~~~~~~~~~~",
+			"~ ><((º> ~~~~~~~~~~~",
+			"~~ <>((º> ~~~~~~~~~~",
+			"~~~ ><((º> ~~~~~~~~~",
+			"~~~~ <>((º> ~~~~~~~~",
+			"~~~~~ ><((º> ~~~~~~~",
+			"~~~~~~ <>((º> ~~~~~~",
+			"~~~~~~~ ><((º> ~~~~~",
+			"~~~~~~~~ <>((º> ~~~~",
+			"~~~~~~~~~ ><((º> ~~~",
+			"~~~~~~~~~~ <>((º> ~~",
+			"~~~~~~~~~~~ ><((º> ~",
+			"~~~~~~~~~~~~ <>((º> ",
+			"~~~~~~~~~~~~~ ><((º>",
+			"~~~~~~~~~~~~~~ <>((º",
+			"~~~~~~~~~~~~~~~ ><((",
+			"~~~~~~~~~~~~~~~~ <>(",
+			"~~~~~~~~~~~~~~~~~ ><",
+			"~~~~~~~~~~~~~~~~~~ <",
+			"~~~~~~~~~~~~~~~~~~~~"
+		]
+	}
+};
+//#endregion
+//#region ../../node_modules/.pnpm/yoctocolors@2.1.2/node_modules/yoctocolors/base.js
+const hasColors = tty?.WriteStream?.prototype?.hasColors?.() ?? false;
+const format = (open, close) => {
+	if (!hasColors) return (input) => input;
+	const openCode = `\u001B[${open}m`;
+	const closeCode = `\u001B[${close}m`;
+	return (input) => {
+		const string = input + "";
+		let index = string.indexOf(closeCode);
+		if (index === -1) return openCode + string + closeCode;
+		let result = openCode;
+		let lastIndex = 0;
+		const replaceCode = (close === 22 ? closeCode : "") + openCode;
+		while (index !== -1) {
+			result += string.slice(lastIndex, index) + replaceCode;
+			lastIndex = index + closeCode.length;
+			index = string.indexOf(closeCode, lastIndex);
+		}
+		result += string.slice(lastIndex) + closeCode;
+		return result;
+	};
+};
+format(0, 0);
+format(1, 22);
+format(2, 22);
+format(3, 23);
+format(4, 24);
+format(53, 55);
+format(7, 27);
+format(8, 28);
+format(9, 29);
+format(30, 39);
+const red = format(31, 39);
+const green = format(32, 39);
+const yellow = format(33, 39);
+const blue = format(34, 39);
+format(35, 39);
+format(36, 39);
+format(37, 39);
+format(90, 39);
+format(40, 49);
+format(41, 49);
+format(42, 49);
+format(43, 49);
+format(44, 49);
+format(45, 49);
+format(46, 49);
+format(47, 49);
+format(100, 49);
+format(91, 39);
+format(92, 39);
+format(93, 39);
+format(94, 39);
+format(95, 39);
+format(96, 39);
+format(97, 39);
+format(101, 49);
+format(102, 49);
+format(103, 49);
+format(104, 49);
+format(105, 49);
+format(106, 49);
+format(107, 49);
+//#endregion
+//#region ../../node_modules/.pnpm/log-symbols@7.0.1/node_modules/log-symbols/symbols.js
+const _isUnicodeSupported = isUnicodeSupported();
+const info = blue(_isUnicodeSupported ? "ℹ" : "i");
+const success = green(_isUnicodeSupported ? "✔" : "√");
+const warning = yellow(_isUnicodeSupported ? "⚠" : "‼");
+const error = red(_isUnicodeSupported ? "✖" : "×");
+//#endregion
+//#region ../../node_modules/.pnpm/string-width@8.1.1/node_modules/string-width/index.js
+/**
+Logic:
+- Segment graphemes to match how terminals render clusters.
+- Width rules:
+1. Skip non-printing clusters (Default_Ignorable, Control, pure Mark, lone Surrogates). Tabs are ignored by design.
+2. RGI emoji clusters (\p{RGI_Emoji}) are double-width.
+3. Otherwise use East Asian Width of the cluster’s first visible code point, and add widths for trailing Halfwidth/Fullwidth Forms within the same cluster (e.g., dakuten/handakuten/prolonged sound mark).
+*/
+const segmenter = new Intl.Segmenter();
+const zeroWidthClusterRegex = /^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Format}|\p{Mark}|\p{Surrogate})+$/v;
+const leadingNonPrintingRegex = /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]+/v;
+const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
+function baseVisible(segment) {
+	return segment.replace(leadingNonPrintingRegex, "");
+}
+function isZeroWidthCluster(segment) {
+	return zeroWidthClusterRegex.test(segment);
+}
+function trailingHalfwidthWidth(segment, eastAsianWidthOptions) {
+	let extra = 0;
+	if (segment.length > 1) {
+		for (const char of segment.slice(1)) if (char >= "＀" && char <= "￯") extra += eastAsianWidth(char.codePointAt(0), eastAsianWidthOptions);
+	}
+	return extra;
+}
+function stringWidth(input, options = {}) {
+	if (typeof input !== "string" || input.length === 0) return 0;
+	const { ambiguousIsNarrow = true, countAnsiEscapeCodes = false } = options;
+	let string = input;
+	if (!countAnsiEscapeCodes) string = stripAnsi(string);
+	if (string.length === 0) return 0;
+	let width = 0;
+	const eastAsianWidthOptions = { ambiguousAsWide: !ambiguousIsNarrow };
+	for (const { segment } of segmenter.segment(string)) {
+		if (isZeroWidthCluster(segment)) continue;
+		if (rgiEmojiRegex.test(segment)) {
+			width += 2;
+			continue;
+		}
+		const codePoint = baseVisible(segment).codePointAt(0);
+		width += eastAsianWidth(codePoint, eastAsianWidthOptions);
+		width += trailingHalfwidthWidth(segment, eastAsianWidthOptions);
+	}
+	return width;
+}
+//#endregion
+//#region ../../node_modules/.pnpm/is-interactive@2.0.0/node_modules/is-interactive/index.js
+function isInteractive({ stream = process.stdout } = {}) {
+	return Boolean(stream && stream.isTTY && process.env.TERM !== "dumb" && !("CI" in process.env));
+}
+//#endregion
+//#region ../../node_modules/.pnpm/stdin-discarder@0.3.2/node_modules/stdin-discarder/index.js
+const ASCII_ETX_CODE = 3;
+var StdinDiscarder = class {
+	#activeCount = 0;
+	#stdin;
+	#stdinWasPaused = false;
+	#stdinWasRaw = false;
+	#handleInputBound = (chunk) => {
+		if (!chunk?.length) return;
+		if ((typeof chunk === "string" ? chunk.codePointAt(0) : chunk[0]) === ASCII_ETX_CODE) process$1.kill(process$1.pid, "SIGINT");
+	};
+	start() {
+		this.#activeCount++;
+		if (this.#activeCount === 1) this.#realStart();
+	}
+	stop() {
+		if (this.#activeCount === 0) return;
+		if (--this.#activeCount === 0) this.#realStop();
+	}
+	#realStart() {
+		const { stdin } = process$1;
+		if (process$1.platform === "win32" || !stdin?.isTTY || typeof stdin.setRawMode !== "function") {
+			this.#stdin = void 0;
+			return;
+		}
+		this.#stdin = stdin;
+		this.#stdinWasPaused = stdin.isPaused();
+		this.#stdinWasRaw = Boolean(stdin.isRaw);
+		stdin.setRawMode(true);
+		stdin.prependListener("data", this.#handleInputBound);
+		if (this.#stdinWasPaused) stdin.resume();
+	}
+	#realStop() {
+		if (!this.#stdin) return;
+		const stdin = this.#stdin;
+		stdin.off("data", this.#handleInputBound);
+		if (stdin.isTTY) stdin.setRawMode?.(this.#stdinWasRaw);
+		if (this.#stdinWasPaused) stdin.pause();
+		this.#stdin = void 0;
+		this.#stdinWasPaused = false;
+		this.#stdinWasRaw = false;
+	}
+};
+const stdinDiscarder = new StdinDiscarder();
+var stdin_discarder_default = Object.freeze(stdinDiscarder);
+//#endregion
+//#region ../../node_modules/.pnpm/ora@9.4.0/node_modules/ora/index.js
+const RENDER_DEFERRAL_TIMEOUT = 200;
+const SYNCHRONIZED_OUTPUT_ENABLE = "\x1B[?2026h";
+const SYNCHRONIZED_OUTPUT_DISABLE = "\x1B[?2026l";
+const activeHooksPerStream = /* @__PURE__ */ new Map();
+const validColors = new Set([
+	"black",
+	"red",
+	"green",
+	"yellow",
+	"blue",
+	"magenta",
+	"cyan",
+	"white",
+	"gray"
+]);
+var Ora = class {
+	#linesToClear = 0;
+	#frameIndex = -1;
+	#lastFrameTime = 0;
+	#options;
+	#spinner;
+	#stream;
+	#id;
+	#hookedStreams = /* @__PURE__ */ new Map();
+	#isInternalWrite = false;
+	#drainHandler;
+	#deferRenderTimer;
+	#isDiscardingStdin = false;
+	#color;
+	#internalWrite(fn) {
+		this.#isInternalWrite = true;
+		try {
+			return fn();
+		} finally {
+			this.#isInternalWrite = false;
+		}
+	}
+	#tryRender() {
+		if (this.isSpinning) this.render();
+	}
+	#stringifyChunk(chunk, encoding) {
+		if (chunk === void 0 || chunk === null) return "";
+		if (typeof chunk === "string") return chunk;
+		if (Buffer.isBuffer(chunk) || ArrayBuffer.isView(chunk)) {
+			const normalizedEncoding = typeof encoding === "string" && encoding && encoding !== "buffer" ? encoding : "utf8";
+			return Buffer.from(chunk).toString(normalizedEncoding);
+		}
+		return String(chunk);
+	}
+	#chunkTerminatesLine(chunkString) {
+		if (!chunkString) return false;
+		const lastCharacter = chunkString.at(-1);
+		return lastCharacter === "\n" || lastCharacter === "\r";
+	}
+	#scheduleRenderDeferral() {
+		if (this.#deferRenderTimer) return;
+		this.#deferRenderTimer = setTimeout(() => {
+			this.#deferRenderTimer = void 0;
+			if (this.isSpinning) this.#tryRender();
+		}, RENDER_DEFERRAL_TIMEOUT);
+		if (typeof this.#deferRenderTimer?.unref === "function") this.#deferRenderTimer.unref();
+	}
+	#clearRenderDeferral() {
+		if (this.#deferRenderTimer) {
+			clearTimeout(this.#deferRenderTimer);
+			this.#deferRenderTimer = void 0;
+		}
+	}
+	#buildOutputLine(symbol, text, prefixText, suffixText) {
+		const fullPrefixText = this.#getFullPrefixText(prefixText, " ");
+		const fullText = typeof text === "string" ? (symbol ? " " : "") + text : "";
+		const fullSuffixText = this.#getFullSuffixText(suffixText, " ");
+		return fullPrefixText + symbol + fullText + fullSuffixText;
+	}
+	constructor(options) {
+		if (typeof options === "string") options = { text: options };
+		this.#options = {
+			color: "cyan",
+			stream: process$1.stderr,
+			discardStdin: true,
+			hideCursor: true,
+			...options
+		};
+		this.color = this.#options.color;
+		this.#stream = this.#options.stream;
+		if (typeof this.#options.isEnabled !== "boolean") this.#options.isEnabled = isInteractive({ stream: this.#stream });
+		if (typeof this.#options.isSilent !== "boolean") this.#options.isSilent = false;
+		if (this.#options.interval !== void 0 && !(Number.isInteger(this.#options.interval) && this.#options.interval > 0)) throw new Error("The `interval` option must be a positive integer");
+		const userInterval = this.#options.interval;
+		this.spinner = this.#options.spinner;
+		this.#options.interval = userInterval;
+		this.text = this.#options.text;
+		this.prefixText = this.#options.prefixText;
+		this.suffixText = this.#options.suffixText;
+		this.indent = this.#options.indent;
+		if (process$1.env.NODE_ENV === "test") {
+			this._stream = this.#stream;
+			this._isEnabled = this.#options.isEnabled;
+			Object.defineProperty(this, "_linesToClear", {
+				get() {
+					return this.#linesToClear;
+				},
+				set(newValue) {
+					this.#linesToClear = newValue;
+				}
+			});
+			Object.defineProperty(this, "_frameIndex", { get() {
+				return this.#frameIndex;
+			} });
+			Object.defineProperty(this, "_lineCount", { get() {
+				const columns = this.#stream.columns ?? 80;
+				const prefixText = typeof this.#options.prefixText === "function" ? "" : this.#options.prefixText;
+				const suffixText = typeof this.#options.suffixText === "function" ? "" : this.#options.suffixText;
+				const fullPrefixText = typeof prefixText === "string" && prefixText !== "" ? prefixText + " " : "";
+				const fullSuffixText = typeof suffixText === "string" && suffixText !== "" ? " " + suffixText : "";
+				const fullText = " ".repeat(this.#options.indent) + fullPrefixText + "-" + (typeof this.#options.text === "string" ? " " + this.#options.text : "") + fullSuffixText;
+				return this.#computeLineCountFrom(fullText, columns);
+			} });
+		}
+	}
+	get indent() {
+		return this.#options.indent;
+	}
+	set indent(indent = 0) {
+		if (!(indent >= 0 && Number.isInteger(indent))) throw new Error("The `indent` option must be an integer from 0 and up");
+		this.#options.indent = indent;
+	}
+	get interval() {
+		return this.#options.interval ?? this.#spinner.interval ?? 100;
+	}
+	get spinner() {
+		return this.#spinner;
+	}
+	set spinner(spinner) {
+		this.#frameIndex = -1;
+		this.#options.interval = void 0;
+		if (typeof spinner === "object") {
+			if (!Array.isArray(spinner.frames) || spinner.frames.length === 0 || spinner.frames.some((frame) => typeof frame !== "string")) throw new Error("The given spinner must have a non-empty `frames` array of strings");
+			if (spinner.interval !== void 0 && !(Number.isInteger(spinner.interval) && spinner.interval > 0)) throw new Error("`spinner.interval` must be a positive integer if provided");
+			this.#spinner = spinner;
+		} else if (!isUnicodeSupported()) this.#spinner = cli_spinners_default.line;
+		else if (spinner === void 0) this.#spinner = cli_spinners_default.dots;
+		else if (spinner !== "default" && cli_spinners_default[spinner]) this.#spinner = cli_spinners_default[spinner];
+		else throw new Error(`There is no built-in spinner named '${spinner}'. See https://github.com/sindresorhus/cli-spinners/blob/main/spinners.json for a full list.`);
+	}
+	get text() {
+		return this.#options.text;
+	}
+	set text(value = "") {
+		this.#options.text = value;
+	}
+	get prefixText() {
+		return this.#options.prefixText;
+	}
+	set prefixText(value = "") {
+		this.#options.prefixText = value;
+	}
+	get suffixText() {
+		return this.#options.suffixText;
+	}
+	set suffixText(value = "") {
+		this.#options.suffixText = value;
+	}
+	get isSpinning() {
+		return this.#id !== void 0;
+	}
+	#formatAffix(value, separator, placeBefore = false) {
+		const resolved = typeof value === "function" ? value() : value;
+		if (typeof resolved === "string" && resolved !== "") return placeBefore ? separator + resolved : resolved + separator;
+		return "";
+	}
+	#getFullPrefixText(prefixText = this.#options.prefixText, postfix = " ") {
+		return this.#formatAffix(prefixText, postfix, false);
+	}
+	#getFullSuffixText(suffixText = this.#options.suffixText, prefix = " ") {
+		return this.#formatAffix(suffixText, prefix, true);
+	}
+	#computeLineCountFrom(text, columns) {
+		let count = 0;
+		for (const line of stripVTControlCharacters(text).split("\n")) count += Math.max(1, Math.ceil(stringWidth(line) / columns));
+		return count;
+	}
+	get color() {
+		return this.#color;
+	}
+	set color(value) {
+		if (value !== void 0 && value !== false && !validColors.has(value)) throw new Error("The `color` option must be a valid color or `false` to disable");
+		this.#color = value;
+	}
+	get isEnabled() {
+		return this.#options.isEnabled && !this.#options.isSilent;
+	}
+	set isEnabled(value) {
+		if (typeof value !== "boolean") throw new TypeError("The `isEnabled` option must be a boolean");
+		this.#options.isEnabled = value;
+	}
+	get isSilent() {
+		return this.#options.isSilent;
+	}
+	set isSilent(value) {
+		if (typeof value !== "boolean") throw new TypeError("The `isSilent` option must be a boolean");
+		this.#options.isSilent = value;
+	}
+	frame() {
+		const now = Date.now();
+		if (this.#frameIndex === -1 || now - this.#lastFrameTime >= this.interval) {
+			this.#frameIndex = (this.#frameIndex + 1) % this.#spinner.frames.length;
+			this.#lastFrameTime = now;
+		}
+		const { frames } = this.#spinner;
+		let frame = frames[this.#frameIndex];
+		if (this.#color) frame = chalk[this.#color](frame);
+		const fullPrefixText = this.#getFullPrefixText(this.#options.prefixText, " ");
+		const fullText = typeof this.text === "string" ? " " + this.text : "";
+		const fullSuffixText = this.#getFullSuffixText(this.#options.suffixText, " ");
+		return fullPrefixText + frame + fullText + fullSuffixText;
+	}
+	clear() {
+		if (!this.isEnabled || !this.#stream.isTTY) return this;
+		this.#internalWrite(() => {
+			this.#stream.cursorTo(0);
+			for (let index = 0; index < this.#linesToClear; index++) {
+				if (index > 0) this.#stream.moveCursor(0, -1);
+				this.#stream.clearLine(1);
+			}
+			if (this.#options.indent) this.#stream.cursorTo(this.#options.indent);
+		});
+		this.#linesToClear = 0;
+		return this;
+	}
+	#hookStream(stream) {
+		if (!stream || this.#hookedStreams.has(stream) || !stream.isTTY || typeof stream.write !== "function") return;
+		if (activeHooksPerStream.has(stream)) console.warn("[ora] Multiple concurrent spinners detected. This may cause visual corruption. Use one spinner at a time.");
+		const originalWrite = stream.write;
+		this.#hookedStreams.set(stream, originalWrite);
+		activeHooksPerStream.set(stream, this);
+		stream.write = (chunk, encoding, callback) => this.#hookedWrite(stream, originalWrite, chunk, encoding, callback);
+	}
+	/**
+	Intercept stream writes while spinner is active to handle external writes cleanly without visual corruption.
+	Hooks process stdio streams and the active spinner stream so console.log(), console.error(), and direct writes stay tidy.
+	*/
+	#installHook() {
+		if (!this.isEnabled || this.#hookedStreams.size > 0) return;
+		const streamsToHook = new Set([
+			this.#stream,
+			process$1.stdout,
+			process$1.stderr
+		]);
+		for (const stream of streamsToHook) this.#hookStream(stream);
+	}
+	#uninstallHook() {
+		for (const [stream, originalWrite] of this.#hookedStreams) {
+			stream.write = originalWrite;
+			if (activeHooksPerStream.get(stream) === this) activeHooksPerStream.delete(stream);
+		}
+		this.#hookedStreams.clear();
+	}
+	#hookedWrite(stream, originalWrite, chunk, encoding, callback) {
+		if (typeof encoding === "function") {
+			callback = encoding;
+			encoding = void 0;
+		}
+		if (this.#isInternalWrite) return originalWrite.call(stream, chunk, encoding, callback);
+		this.clear();
+		const chunkString = this.#stringifyChunk(chunk, encoding);
+		const chunkTerminatesLine = this.#chunkTerminatesLine(chunkString);
+		const writeResult = originalWrite.call(stream, chunk, encoding, callback);
+		if (chunkTerminatesLine) this.#clearRenderDeferral();
+		else if (chunkString.length > 0) this.#scheduleRenderDeferral();
+		if (this.isSpinning && !this.#deferRenderTimer) this.render();
+		return writeResult;
+	}
+	render() {
+		if (!this.isEnabled || this.#drainHandler || this.#deferRenderTimer) return this;
+		const useSynchronizedOutput = this.#stream.isTTY;
+		let shouldDisableSynchronizedOutput = false;
+		try {
+			if (useSynchronizedOutput) {
+				this.#internalWrite(() => this.#stream.write(SYNCHRONIZED_OUTPUT_ENABLE));
+				shouldDisableSynchronizedOutput = true;
+			}
+			this.clear();
+			let frameContent = this.frame();
+			const columns = this.#stream.columns ?? 80;
+			const actualLineCount = this.#computeLineCountFrom(frameContent, columns);
+			const consoleHeight = this.#stream.rows;
+			if (consoleHeight && consoleHeight > 1 && actualLineCount > consoleHeight) {
+				const lines = frameContent.split("\n");
+				const maxLines = consoleHeight - 1;
+				frameContent = [...lines.slice(0, maxLines), "... (content truncated to fit terminal)"].join("\n");
+			}
+			if (this.#internalWrite(() => this.#stream.write(frameContent)) === false && this.#stream.isTTY) {
+				this.#drainHandler = () => {
+					this.#drainHandler = void 0;
+					this.#tryRender();
+				};
+				this.#stream.once("drain", this.#drainHandler);
+			}
+			this.#linesToClear = this.#computeLineCountFrom(frameContent, columns);
+		} finally {
+			if (shouldDisableSynchronizedOutput) this.#internalWrite(() => this.#stream.write(SYNCHRONIZED_OUTPUT_DISABLE));
+		}
+		return this;
+	}
+	start(text) {
+		if (text) this.text = text;
+		if (this.isSilent) return this;
+		if (!this.isEnabled) {
+			const symbol = this.text ? "-" : "";
+			const line = " ".repeat(this.#options.indent) + this.#buildOutputLine(symbol, this.text, this.#options.prefixText, this.#options.suffixText);
+			if (line.trim() !== "") this.#internalWrite(() => this.#stream.write(line + "\n"));
+			return this;
+		}
+		if (this.isSpinning) return this;
+		if (this.#options.hideCursor) cliCursor.hide(this.#stream);
+		if (this.#options.discardStdin && process$1.stdin.isTTY) {
+			stdin_discarder_default.start();
+			this.#isDiscardingStdin = true;
+		}
+		this.#installHook();
+		this.render();
+		this.#id = setInterval(this.render.bind(this), this.interval);
+		return this;
+	}
+	stop() {
+		clearInterval(this.#id);
+		this.#id = void 0;
+		this.#frameIndex = -1;
+		this.#lastFrameTime = 0;
+		this.#clearRenderDeferral();
+		this.#uninstallHook();
+		if (this.#drainHandler) {
+			this.#stream.removeListener("drain", this.#drainHandler);
+			this.#drainHandler = void 0;
+		}
+		if (this.isEnabled) {
+			this.clear();
+			if (this.#options.hideCursor) cliCursor.show(this.#stream);
+		}
+		if (this.#isDiscardingStdin) {
+			this.#isDiscardingStdin = false;
+			stdin_discarder_default.stop();
+		}
+		return this;
+	}
+	succeed(text) {
+		return this.stopAndPersist({
+			symbol: success,
+			text
+		});
+	}
+	fail(text) {
+		return this.stopAndPersist({
+			symbol: error,
+			text
+		});
+	}
+	warn(text) {
+		return this.stopAndPersist({
+			symbol: warning,
+			text
+		});
+	}
+	info(text) {
+		return this.stopAndPersist({
+			symbol: info,
+			text
+		});
+	}
+	stopAndPersist(options = {}) {
+		if (this.isSilent) return this;
+		const symbol = options.symbol ?? " ";
+		const text = options.text ?? this.text;
+		const prefixText = options.prefixText ?? this.#options.prefixText;
+		const suffixText = options.suffixText ?? this.#options.suffixText;
+		const textToWrite = this.#buildOutputLine(symbol, text, prefixText, suffixText) + "\n";
+		this.stop();
+		this.#internalWrite(() => this.#stream.write(textToWrite));
+		return this;
+	}
+};
+function ora(options) {
+	return new Ora(options);
+}
+//#endregion
+//#region src/cli/utils/is-spinner-interactive.ts
+const isSpinnerInteractive = (stream = process.stderr) => {
+	if (stream.isTTY !== true) return false;
+	const columnCount = stream.columns;
+	if (!columnCount || columnCount <= 0) return false;
+	if (process.env.TERM === "dumb") return false;
+	if (isNonInteractiveEnvironment()) return false;
+	return true;
+};
+//#endregion
+//#region src/cli/utils/spinner.ts
+let isSilent = false;
+const setSpinnerSilent = (silent) => {
+	isSilent = silent;
+};
+const isSpinnerSilent = () => isSilent;
+const noopHandle = Object.freeze({
+	update: () => {},
+	succeed: () => {},
+	fail: () => {},
+	warn: () => {},
+	stop: () => {}
+});
+const spinner = (text) => ({ start() {
+	if (isSilent) return noopHandle;
+	const stream = process.stderr;
+	const isEnabled = isSpinnerInteractive(stream);
+	const instance = ora({
+		text,
+		indent: 0,
+		isEnabled,
+		stream,
+		discardStdin: false
+	});
+	if (isEnabled) instance.start();
+	let didFinalize = false;
+	return {
+		update(displayText) {
+			if (didFinalize) return;
+			instance.text = displayText;
+		},
+		succeed(displayText) {
+			if (didFinalize) return;
+			didFinalize = true;
+			instance.succeed(displayText);
+		},
+		fail(displayText) {
+			if (didFinalize) return;
+			didFinalize = true;
+			instance.fail(displayText);
+		},
+		warn(displayText) {
+			if (didFinalize) return;
+			didFinalize = true;
+			instance.warn(displayText);
+		},
+		stop() {
+			if (didFinalize) return;
+			didFinalize = true;
+			instance.stop();
+		}
+	};
+} });
+//#endregion
+//#region src/cli/utils/install-doctor-script.ts
+const DOCTOR_SCRIPT_NAME = "doctor";
+const FALLBACK_DOCTOR_SCRIPT_NAME = "react-doctor";
+const DOCTOR_SCRIPT_COMMAND = "npx react-doctor@latest";
+const DOCTOR_PACKAGE_NAME = "react-doctor";
+const DEPENDENCY_FIELD_NAMES = [
+	"dependencies",
+	"devDependencies",
+	"optionalDependencies",
+	"peerDependencies"
+];
+const isReactDoctorScriptCommand = (value) => typeof value === "string" && /\breact-doctor\b/.test(value);
+const findNearestPackageDirectory = (startDirectory, stopDirectory) => {
+	let currentDirectory = path$1.resolve(startDirectory);
+	const resolvedStopDirectory = stopDirectory === void 0 ? void 0 : path$1.resolve(stopDirectory);
+	while (true) {
+		if (fs$1.existsSync(getPackageJsonPath(currentDirectory))) return currentDirectory;
+		if (currentDirectory === resolvedStopDirectory) return null;
+		const parentDirectory = path$1.dirname(currentDirectory);
+		if (parentDirectory === currentDirectory) return null;
+		currentDirectory = parentDirectory;
+	}
+};
+const hasDoctorScript = (projectRoot) => {
+	const packageJson = readPackageJson(findNearestPackageDirectory(projectRoot) ?? projectRoot);
+	if (!isRecord(packageJson)) return false;
+	const scripts = packageJson.scripts;
+	if (!isRecord(scripts)) return false;
+	return isReactDoctorScriptCommand(scripts[DOCTOR_SCRIPT_NAME]) || isReactDoctorScriptCommand(scripts[FALLBACK_DOCTOR_SCRIPT_NAME]);
+};
+const hasDoctorDependency = (packageJson) => DEPENDENCY_FIELD_NAMES.some((fieldName) => {
+	const dependencies = packageJson[fieldName];
+	return isRecord(dependencies) && Object.hasOwn(dependencies, "react-doctor");
+});
+const installDoctorScript = (options) => {
+	const packageDirectory = findNearestPackageDirectory(options.projectRoot) ?? options.projectRoot;
+	const packageJsonPath = getPackageJsonPath(packageDirectory);
+	const packageJson = readPackageJson(packageDirectory);
+	if (!isRecord(packageJson)) return {
+		packageJsonPath,
+		scriptStatus: "skipped",
+		scriptReason: "missing-or-invalid-package-json"
+	};
+	const scripts = packageJson.scripts;
+	const scriptTarget = (() => {
+		if (scripts !== void 0 && !isRecord(scripts)) return {
+			status: "skipped",
+			reason: "invalid-scripts"
+		};
+		const scriptRecord = isRecord(scripts) ? scripts : {};
+		if (isReactDoctorScriptCommand(scriptRecord[DOCTOR_SCRIPT_NAME])) return {
+			scriptName: DOCTOR_SCRIPT_NAME,
+			status: "existing"
+		};
+		if (!Object.hasOwn(scriptRecord, DOCTOR_SCRIPT_NAME)) {
+			if (isReactDoctorScriptCommand(scriptRecord[FALLBACK_DOCTOR_SCRIPT_NAME])) return {
+				scriptName: FALLBACK_DOCTOR_SCRIPT_NAME,
+				status: "existing"
+			};
+			return {
+				scriptName: DOCTOR_SCRIPT_NAME,
+				status: "created"
+			};
+		}
+		if (isReactDoctorScriptCommand(scriptRecord[FALLBACK_DOCTOR_SCRIPT_NAME])) return {
+			scriptName: FALLBACK_DOCTOR_SCRIPT_NAME,
+			status: "existing",
+			reason: "doctor-script-taken"
+		};
+		if (Object.hasOwn(scriptRecord, FALLBACK_DOCTOR_SCRIPT_NAME)) return {
+			status: "skipped",
+			reason: "script-names-taken"
+		};
+		return {
+			scriptName: FALLBACK_DOCTOR_SCRIPT_NAME,
+			status: "created",
+			reason: "doctor-script-taken"
+		};
+	})();
+	const scriptStatus = scriptTarget.status;
+	if (scriptStatus === "created") writeJsonFile(packageJsonPath, {
+		...packageJson,
+		scripts: {
+			...isRecord(scripts) ? scripts : {},
+			[scriptTarget.scriptName ?? DOCTOR_SCRIPT_NAME]: DOCTOR_SCRIPT_COMMAND
+		}
+	});
+	return {
+		packageJsonPath,
+		...scriptTarget.scriptName !== void 0 ? { scriptName: scriptTarget.scriptName } : {},
+		scriptStatus,
+		...scriptTarget.reason !== void 0 ? { scriptReason: scriptTarget.reason } : {}
+	};
+};
+const formatDoctorScriptInstallMessage = (scriptResult) => {
+	const scriptName = scriptResult.scriptName ?? "doctor";
+	if (scriptResult.scriptStatus === "created") return `Added package script: ${scriptName}.`;
+	if (scriptResult.scriptStatus === "existing") return `Package script already exists: ${scriptName}.`;
+	if (scriptResult.scriptReason === "script-names-taken") return "Skipped package script: doctor and react-doctor are already taken.";
+	if (scriptResult.scriptReason === "doctor-script-taken") return "Skipped package script: doctor and react-doctor scripts already exist.";
+	if (scriptResult.scriptReason === "invalid-scripts") return "Skipped package script: scripts field is not an object.";
+	return "Skipped package script: package.json missing or invalid.";
+};
+const installReactDoctorScriptStep = (projectRoot) => {
+	const scriptSpinner = spinner("Installing React Doctor package script...").start();
+	try {
+		const scriptResult = installDoctorScript({ projectRoot });
+		scriptSpinner.succeed(formatDoctorScriptInstallMessage(scriptResult));
+	} catch (error) {
+		scriptSpinner.fail("Failed to install React Doctor package script.");
+		throw error;
+	}
+};
+//#endregion
+export { runGitAsync as A, isRecord as C, readPackageJson as D, packageHasRecordKey as E, writeJsonFile as M, cliLogger as N, resolveGitPath as O, getPackageJsonPath as S, packageHasNestedRecordKey as T, REACT_DOCTOR_COMMAND as _, installReactDoctorScriptStep as a, VITE_PLUS_HOOKS_PATH as b, spinner as c, HUSKY_HOOKS_PATH as d, LEFTHOOK_CONFIG_FILES as f, PRE_COMMIT_CONFIG_FILE as g, OVERCOMMIT_CONFIG_FILE as h, hasDoctorScript as i, runGitRaw as j, runGit as k, HOOK_FILE_NAME as l, NON_BLOCKING_REACT_DOCTOR_COMMAND as m, findNearestPackageDirectory as n, isSpinnerSilent as o, LEGACY_HOOK_RUNNER_RELATIVE_PATH as p, hasDoctorDependency as r, setSpinnerSilent as s, DOCTOR_PACKAGE_NAME as t, HOOK_RELATIVE_PATH as u, SIMPLE_GIT_HOOKS_CONFIG_FILE as v, packageHasDependency as w, ensureTrailingNewline as x, SIMPLE_GIT_HOOKS_PACKAGE_JSON_KEY as y };
+
+//# sourceMappingURL=install-doctor-script-BvrxLUFo.js.map
+//# debugId=587e5c77-88dc-5313-9529-7dc120ac766d

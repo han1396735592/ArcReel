@@ -1,0 +1,39 @@
+'use client';
+
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+var _excluded = ["size", "style"];
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(obj, key, value) { key = _toPropertyKey(key); if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : String(i); }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+import { memo } from 'react';
+import { TITLE } from "../style";
+import { jsx as _jsx } from "react/jsx-runtime";
+import { jsxs as _jsxs } from "react/jsx-runtime";
+var Icon = /*#__PURE__*/memo(function (_ref) {
+  var _ref$size = _ref.size,
+    size = _ref$size === void 0 ? '1em' : _ref$size,
+    style = _ref.style,
+    rest = _objectWithoutProperties(_ref, _excluded);
+  return /*#__PURE__*/_jsxs("svg", _objectSpread(_objectSpread({
+    fill: "currentColor",
+    fillRule: "evenodd",
+    height: size,
+    style: _objectSpread({
+      flex: 'none',
+      lineHeight: 1
+    }, style),
+    viewBox: "0 0 103 24",
+    xmlns: "http://www.w3.org/2000/svg"
+  }, rest), {}, {
+    children: [/*#__PURE__*/_jsx("title", {
+      children: TITLE
+    }), /*#__PURE__*/_jsx("path", {
+      d: "M18.496 8.942c0 4.657-2.917 7.342-8.005 7.342H6.517v5.714H2V2h8.49c5.09 0 8.006 2.514 8.006 6.942m-4.288.143c0-2.228-1.43-3.342-3.946-3.342H6.517v6.77h3.745c2.516 0 3.946-1.143 3.946-3.428M25.575 2v10h9.063V2h4.515v19.998h-4.515v-6h-9.063v6h-4.513V2zm30.919 15.998h-9.171L45.705 22h-4.66l8.69-19.997h4.66L62.944 22H58.11zm-1.609-4.002-2.95-7.282L48.958 14zm39.671 4.002h-9.172L83.765 22h-4.66l8.692-19.997h4.66L101.002 22h-4.833zm-1.61-4.002-2.948-7.284-2.975 7.284zM69.525 2v16.055h8.577v3.943H65.008V2z"
+    })]
+  }));
+});
+export default Icon;

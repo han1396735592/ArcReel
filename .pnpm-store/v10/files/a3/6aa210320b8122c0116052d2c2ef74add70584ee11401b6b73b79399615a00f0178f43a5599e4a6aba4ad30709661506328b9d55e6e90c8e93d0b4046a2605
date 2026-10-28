@@ -1,0 +1,45 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="1136a40a-1f61-5692-99b2-3333cd8344be")}catch(e){}}();
+import fs from "node:fs";
+//#region ../core/src/utils/is-errno-exception.ts
+const isErrnoException = (error) => error instanceof Error && "code" in error;
+//#endregion
+//#region ../core/src/project-info/fs-utils.ts
+const IGNORABLE_READDIR_ERROR_CODES = new Set([
+	"EACCES",
+	"EBUSY",
+	"EPERM",
+	"ENOENT",
+	"ENOTDIR",
+	"EINVAL",
+	"ELOOP",
+	"ENAMETOOLONG",
+	"ETIMEDOUT",
+	"UNKNOWN"
+]);
+const isIgnorableReaddirError = (error) => isErrnoException(error) && typeof error.code === "string" && IGNORABLE_READDIR_ERROR_CODES.has(error.code);
+const readDirectoryEntries = (directoryPath) => {
+	try {
+		return fs.readdirSync(directoryPath, { withFileTypes: true });
+	} catch (error) {
+		if (isIgnorableReaddirError(error)) return [];
+		throw error;
+	}
+};
+const isFile = (filePath) => {
+	try {
+		return fs.statSync(filePath, { throwIfNoEntry: false })?.isFile() ?? false;
+	} catch {
+		return false;
+	}
+};
+const isPlainObject = (value) => {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === null || prototype === Object.prototype;
+};
+//#endregion
+export { isErrnoException as i, isPlainObject as n, readDirectoryEntries as r, isFile as t };
+
+//# sourceMappingURL=fs-utils-C88IbqFa.js.map
+//# debugId=1136a40a-1f61-5692-99b2-3333cd8344be

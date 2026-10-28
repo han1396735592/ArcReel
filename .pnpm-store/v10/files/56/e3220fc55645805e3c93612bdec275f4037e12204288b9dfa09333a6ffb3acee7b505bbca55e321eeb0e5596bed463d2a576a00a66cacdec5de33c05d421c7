@@ -1,0 +1,12 @@
+//#region src/cli/utils/unref-stdin.ts
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="d3e46509-a9b9-569a-a558-625cd0ef7026")}catch(e){}}();
+const unrefStdin = () => {
+	if (process.stdin.isTTY) return;
+	process.stdin.unref?.();
+};
+//#endregion
+export { unrefStdin as t };
+
+//# sourceMappingURL=unref-stdin-D-NZBFpg.js.map
+//# debugId=d3e46509-a9b9-569a-a558-625cd0ef7026

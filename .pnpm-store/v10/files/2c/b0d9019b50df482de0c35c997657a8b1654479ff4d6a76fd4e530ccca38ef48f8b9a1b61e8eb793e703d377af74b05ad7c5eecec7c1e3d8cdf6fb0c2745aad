@@ -1,0 +1,68 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e879de13-5f28-5c16-ad17-e4b7b556445c")}catch(e){}}();
+import { $ as warmReactCompilerDetection, A as buildGitSourceListingRequest, I as prefetchGitCommand, K as resolveReactDoctorCacheDir, L as prespawnOxlintWorkers, M as buildOxlintWorkerSpawnSpec, W as resolveOxlintWorkerRuntime, _ as SCAN_PREAMBLE_SKIP_FLAGS, g as RUN_GIT_MAX_BUFFER_BYTES, j as buildOxlintChildEnv, q as resolveScanConcurrency, y as SCAN_RESULT_CACHE_GIT_ARGUMENTS, z as resolveConfiguredScanConcurrency } from "./constants-_b1h6lxa.js";
+import { t as isCacheGloballyDisabled } from "./is-cache-globally-disabled-BTTLvugj.js";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+//#region src/cli/utils/resolve-prefetch-scan-directory.ts
+const isExistingDirectory = (absolutePath) => {
+	try {
+		return fs$1.statSync(absolutePath).isDirectory();
+	} catch {
+		return false;
+	}
+};
+const resolvePrefetchScanDirectory = (argv, currentDirectory) => {
+	const directoryCandidates = [];
+	let previousToken = null;
+	for (const token of argv) {
+		if (SCAN_PREAMBLE_SKIP_FLAGS.has(token)) return null;
+		if (!token.startsWith("-")) {
+			if (isExistingDirectory(path$1.resolve(currentDirectory, token))) directoryCandidates.push(token);
+			else if (previousToken === null || !previousToken.startsWith("-")) return null;
+		}
+		previousToken = token;
+	}
+	if (directoryCandidates.length > 1) return null;
+	return path$1.resolve(currentDirectory, directoryCandidates[0] ?? ".");
+};
+//#endregion
+//#region src/cli/start-scan-preamble.ts
+const prespawnOxlintWorkersForScan = () => {
+	if (process.argv.includes("--no-lint")) return;
+	const workerRuntime = resolveOxlintWorkerRuntime();
+	if (workerRuntime === null) return;
+	const workerCount = process.argv.includes("--no-parallel") ? resolveScanConcurrency(1) : resolveConfiguredScanConcurrency();
+	prespawnOxlintWorkers(buildOxlintWorkerSpawnSpec({
+		nodeBinaryPath: process.execPath,
+		maxWorkers: workerCount,
+		workerScriptPath: workerRuntime.workerScriptPath,
+		oxlintPackageDirectory: workerRuntime.oxlintPackageDirectory,
+		pluginPath: workerRuntime.pluginPath,
+		environment: buildOxlintChildEnv(process.env)
+	}), workerCount);
+};
+const startScanPreamble = () => {
+	const prefetchDirectory = resolvePrefetchScanDirectory(process.argv.slice(2), process.cwd());
+	if (prefetchDirectory === null) return;
+	if (process.argv.includes("--no-cache")) process.env.REACT_DOCTOR_NO_CACHE = "1";
+	prefetchGitCommand(buildGitSourceListingRequest(prefetchDirectory));
+	const isCacheDisabled = isCacheGloballyDisabled();
+	if (!isCacheDisabled) for (const args of SCAN_RESULT_CACHE_GIT_ARGUMENTS) prefetchGitCommand({
+		directory: prefetchDirectory,
+		args,
+		maxBufferBytes: RUN_GIT_MAX_BUFFER_BYTES
+	});
+	if (!(!isCacheDisabled && fs$1.existsSync(path$1.join(resolveReactDoctorCacheDir(prefetchDirectory), "scan-cache.json")))) {
+		warmReactCompilerDetection(prefetchDirectory);
+		prespawnOxlintWorkersForScan();
+	}
+};
+try {
+	startScanPreamble();
+} catch {}
+//#endregion
+export {};
+
+//# sourceMappingURL=start-scan-preamble-BbzEgrwo.js.map
+//# debugId=e879de13-5f28-5c16-ad17-e4b7b556445c

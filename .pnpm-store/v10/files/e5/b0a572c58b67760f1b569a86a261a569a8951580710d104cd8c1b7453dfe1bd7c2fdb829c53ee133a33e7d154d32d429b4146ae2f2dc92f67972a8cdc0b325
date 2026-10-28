@@ -1,0 +1,22 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="c9348da1-7cf0-5e2f-89a0-bfa1edd11a57")}catch(e){}}();
+import { Mt as highlighter, _ as VERSION, gn as gen, un as log } from "./record-metric-AbxY4m3i.js";
+//#region src/cli/utils/print-branded-header.ts
+/**
+* Single branded line every command prints first when not in JSON
+* / score mode. Keeps the visual signature consistent across
+* `inspect`, `install`, and any future subcommand.
+*
+* Effect-typed: callers either `yield*` from inside `Effect.gen`
+* (the canonical path) or bridge with `Effect.runSync(...)` when
+* they're still inside an imperative function.
+*/
+const printBrandedHeader = gen(function* () {
+	yield* log(`${highlighter.bold("React Doctor")} ${highlighter.dim(`v${VERSION}`)}`);
+	yield* log("");
+});
+//#endregion
+export { printBrandedHeader as t };
+
+//# sourceMappingURL=print-branded-header-D1eqThu5.js.map
+//# debugId=c9348da1-7cf0-5e2f-89a0-bfa1edd11a57

@@ -1,0 +1,81 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="768ca7d0-48d7-5f9f-b417-0119eef9e96b")}catch(e){}}();
+import { bt as DOCS_URL, lt as CANONICAL_GITHUB_URL } from "./constants-_b1h6lxa.js";
+import { Mt as highlighter } from "./record-metric-AbxY4m3i.js";
+//#region src/cli/utils/resolve-measure-width.ts
+const resolveClampedWidth = (input) => {
+	const terminalColumns = process.stdout.columns;
+	if (!terminalColumns || terminalColumns <= 0) return input.fullWidth;
+	const availableColumns = terminalColumns - input.reservedColumns;
+	return Math.max(input.minWidth, Math.min(input.fullWidth, availableColumns));
+};
+const resolveMeasureWidth = (reservedColumns = 0) => resolveClampedWidth({
+	reservedColumns,
+	fullWidth: 60,
+	minWidth: 24
+});
+//#endregion
+//#region src/cli/utils/wrap-indented-text.ts
+const wrapLine = (lineText, width, breakLongWords) => {
+	if (lineText.length <= width) return [lineText];
+	const wrappedLines = [];
+	let remainingText = lineText.trim();
+	while (remainingText.length > width) {
+		const candidateText = remainingText.slice(0, width);
+		const breakIndex = candidateText.lastIndexOf(" ");
+		if (breakIndex <= 0) {
+			if (breakLongWords) {
+				wrappedLines.push(candidateText);
+				remainingText = remainingText.slice(width).trimStart();
+				continue;
+			}
+			const nextSpace = remainingText.indexOf(" ");
+			if (nextSpace === -1) break;
+			wrappedLines.push(remainingText.slice(0, nextSpace));
+			remainingText = remainingText.slice(nextSpace + 1).trimStart();
+			continue;
+		}
+		wrappedLines.push(remainingText.slice(0, breakIndex));
+		remainingText = remainingText.slice(breakIndex + 1).trimStart();
+	}
+	if (remainingText.length > 0) wrappedLines.push(remainingText);
+	return wrappedLines;
+};
+/**
+* Greedy word-wrap to a character width, returning one string per line
+* (no indentation applied). Preserves existing `\n` boundaries.
+*/
+const wrapTextToWidth = (text, width, options = {}) => {
+	if (width <= 0) return text.split("\n");
+	const breakLongWords = options.breakLongWords ?? true;
+	return text.split("\n").flatMap((lineText) => wrapLine(lineText, width, breakLongWords));
+};
+//#endregion
+//#region src/cli/utils/build-footer-description-lines.ts
+const FOOTER_DESCRIPTION_INDENT = "  ";
+const buildFooterDescriptionLines = (description) => {
+	return wrapTextToWidth(description, resolveMeasureWidth(2)).map((line) => highlighter.dim(`${FOOTER_DESCRIPTION_INDENT}${line}`));
+};
+//#endregion
+//#region src/cli/utils/build-footer-link-lines.ts
+const buildFooterLinkLines = ({ shareUrl }) => [
+	...shareUrl === null ? [] : [
+		`  ${highlighter.bold("Share:")} ${highlighter.info(shareUrl)}`,
+		...buildFooterDescriptionLines("Tell others how you did on socials"),
+		""
+	],
+	`  ${highlighter.bold("Docs:")} ${highlighter.info(DOCS_URL)}`,
+	...buildFooterDescriptionLines("Learn more about fixing issues, setting up CI/CD, and configuring rules with a config file"),
+	"",
+	`  ${highlighter.bold("GitHub:")} ${highlighter.info(CANONICAL_GITHUB_URL)}`,
+	...buildFooterDescriptionLines("Report issues and star the repository!")
+];
+//#endregion
+//#region src/cli/utils/build-section-divider.ts
+const DIVIDER_INDENT = "  ";
+const buildSectionDivider = () => highlighter.dim(`${DIVIDER_INDENT}${"─".repeat(resolveMeasureWidth(2))}`);
+//#endregion
+export { buildFooterLinkLines as n, buildSectionDivider as t };
+
+//# sourceMappingURL=build-section-divider-Dpv0R267.js.map
+//# debugId=768ca7d0-48d7-5f9f-b417-0119eef9e96b

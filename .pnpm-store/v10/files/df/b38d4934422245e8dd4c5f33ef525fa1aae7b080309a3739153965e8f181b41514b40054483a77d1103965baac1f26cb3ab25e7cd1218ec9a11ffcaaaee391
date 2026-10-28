@@ -1,0 +1,636 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="dd62388e-7fa5-5466-9293-75c1091a30f7")}catch(e){}}();
+import { t as typescriptBinding } from "./_react-doctor_require-typescript-DXQDYeWK.js";
+import { t as unwrapTypescriptExpression } from "./unwrap-typescript-expression-CrEPQUWz.js";
+import { i as JSX_DUPLICATION_SOURCE_FILE_PATTERN } from "./constants-DNh19qg9.js";
+import * as fs$2 from "node:fs";
+import * as path$1 from "node:path";
+import crypto from "node:crypto";
+import { parentPort } from "node:worker_threads";
+import * as fs$1 from "node:fs/promises";
+//#region ../core/src/utils/resolve-bounded-source-read-bytes.ts
+const resolveBoundedSourceReadBytes = (maximumLengthChars, sizeBytes) => Math.min(sizeBytes, maximumLengthChars * 3 + 1);
+//#endregion
+//#region ../core/src/utils/read-text-file-up-to-character-limit-sync.ts
+const readTextFileUpToCharacterLimitSync = (input) => {
+	const buffer = Buffer.allocUnsafe(resolveBoundedSourceReadBytes(input.maximumLengthChars, input.sizeBytes));
+	const fileDescriptor = fs$2.openSync(input.filePath, "r");
+	let readOffset = 0;
+	try {
+		while (readOffset < buffer.length) {
+			const bytesRead = fs$2.readSync(fileDescriptor, buffer, readOffset, buffer.length - readOffset, readOffset);
+			if (bytesRead === 0) break;
+			readOffset += bytesRead;
+		}
+	} finally {
+		fs$2.closeSync(fileDescriptor);
+	}
+	return buffer.subarray(0, readOffset).toString("utf-8");
+};
+//#endregion
+//#region ../core/src/utils/read-text-file-up-to-character-limit.ts
+const readTextFileUpToCharacterLimit = async (input) => {
+	const buffer = Buffer.allocUnsafe(resolveBoundedSourceReadBytes(input.maximumLengthChars, input.sizeBytes));
+	const fileHandle = await fs$1.open(input.filePath, "r");
+	let readOffset = 0;
+	try {
+		while (readOffset < buffer.length) {
+			input.signal?.throwIfAborted();
+			const { bytesRead } = await fileHandle.read(buffer, readOffset, buffer.length - readOffset, readOffset);
+			if (bytesRead === 0) break;
+			readOffset += bytesRead;
+		}
+	} finally {
+		await fileHandle.close();
+	}
+	input.signal?.throwIfAborted();
+	return buffer.subarray(0, readOffset).toString("utf-8");
+};
+//#endregion
+//#region ../core/src/react-cleanup/create-jsx-source-reader.ts
+const readBlocking = (absolutePath, maximumLengthChars, sizeBytes) => new Promise((resolve) => {
+	resolve(sizeBytes <= maximumLengthChars ? fs$2.readFileSync(absolutePath, "utf-8") : readTextFileUpToCharacterLimitSync({
+		filePath: absolutePath,
+		maximumLengthChars,
+		sizeBytes
+	}));
+});
+const createJsxSourceReader = (input) => {
+	const sourceSizeByPath = new Map(input.sourceFiles.map((sourceFile) => [sourceFile.path, sourceFile.sizeBytes]));
+	return {
+		paths: [...sourceSizeByPath.keys()],
+		read: (filePath, maximumLengthChars) => {
+			const absolutePath = path$1.resolve(input.rootDirectory, filePath);
+			const sourceSizeBytes = sourceSizeByPath.get(filePath) ?? 0;
+			if (input.useBlockingReads === true) return readBlocking(absolutePath, maximumLengthChars, sourceSizeBytes);
+			return sourceSizeBytes <= maximumLengthChars ? fs$1.readFile(absolutePath, {
+				encoding: "utf-8",
+				signal: input.signal
+			}) : readTextFileUpToCharacterLimit({
+				filePath: absolutePath,
+				maximumLengthChars,
+				sizeBytes: sourceSizeBytes,
+				signal: input.signal
+			});
+		}
+	};
+};
+//#endregion
+//#region ../core/src/utils/get-typescript-script-kind.ts
+const getTypescriptScriptKind = (fileName) => {
+	if (fileName.endsWith(".tsx")) return typescriptBinding.ScriptKind.TSX;
+	if (fileName.endsWith(".jsx")) return typescriptBinding.ScriptKind.JSX;
+	if (/\.[cm]?ts$/.test(fileName)) return typescriptBinding.ScriptKind.TS;
+	return typescriptBinding.ScriptKind.JS;
+};
+//#endregion
+//#region ../core/src/utils/yield-to-event-loop.ts
+const yieldToEventLoop = () => new Promise((resolve) => {
+	setImmediate(resolve);
+});
+//#endregion
+//#region ../core/src/react-cleanup/utils/is-non-react-jsx-source.ts
+const NON_REACT_JSX_RUNTIME_PREFIXES = ["solid-js", "@builder.io/qwik"];
+const NON_REACT_JSX_RUNTIME_PACKAGES = new Set(["voby", "vidode"]);
+const REACT_JSX_RUNTIME_PREFIXES = [
+	"react",
+	"react-dom",
+	"preact"
+];
+const matchesPackagePrefix = (source, prefixes) => prefixes.some((prefix) => source === prefix || source.startsWith(`${prefix}/`));
+const importDeclarationHasRuntimeValue = (declaration) => {
+	const importClause = declaration.importClause;
+	if (!importClause) return true;
+	if (importClause.isTypeOnly) return false;
+	if (importClause.name || !importClause.namedBindings) return true;
+	if (typescriptBinding.isNamespaceImport(importClause.namedBindings)) return true;
+	return importClause.namedBindings.elements.some((element) => !element.isTypeOnly);
+};
+const openingElementHasNonReactMarker = (openingElement) => openingElement.attributes.properties.some((attribute) => {
+	if (!typescriptBinding.isJsxAttribute(attribute)) return false;
+	if (typescriptBinding.isJsxNamespacedName(attribute.name)) return attribute.name.namespace.text === "class" || attribute.name.namespace.text === "bind";
+	if (attribute.name.text !== "classList" || !attribute.initializer) return false;
+	return typescriptBinding.isJsxExpression(attribute.initializer) && attribute.initializer.expression !== void 0 && typescriptBinding.isObjectLiteralExpression(attribute.initializer.expression);
+});
+const NON_REACT_RUNTIME_SOURCE_TEXT_MARKERS = [
+	...NON_REACT_JSX_RUNTIME_PREFIXES,
+	...NON_REACT_JSX_RUNTIME_PACKAGES,
+	"classList"
+];
+const NAMESPACED_ATTRIBUTE_MARKER_PATTERN = /\b(?:class|bind)\s*:/;
+const ESCAPED_MODULE_SPECIFIER_PATTERN = /(?:import|from)\s*["'][^"'\n]*\\/;
+const mayContainNonReactMarker = (sourceText) => NON_REACT_RUNTIME_SOURCE_TEXT_MARKERS.some((marker) => sourceText.includes(marker)) || NAMESPACED_ATTRIBUTE_MARKER_PATTERN.test(sourceText) || ESCAPED_MODULE_SPECIFIER_PATTERN.test(sourceText);
+const isNonReactJsxSource = (sourceFile) => {
+	if (!mayContainNonReactMarker(sourceFile.text)) return false;
+	let hasNonReactRuntime = false;
+	let hasReactRuntime = false;
+	let hasNonReactMarker = false;
+	const visitNode = (node) => {
+		if (typescriptBinding.isImportDeclaration(node) && importDeclarationHasRuntimeValue(node)) {
+			const source = typescriptBinding.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : "";
+			if (NON_REACT_JSX_RUNTIME_PACKAGES.has(source) || matchesPackagePrefix(source, NON_REACT_JSX_RUNTIME_PREFIXES)) hasNonReactRuntime = true;
+			if (matchesPackagePrefix(source, REACT_JSX_RUNTIME_PREFIXES)) hasReactRuntime = true;
+		}
+		if ((typescriptBinding.isJsxOpeningElement(node) || typescriptBinding.isJsxSelfClosingElement(node)) && openingElementHasNonReactMarker(node)) hasNonReactMarker = true;
+		typescriptBinding.forEachChild(node, visitNode);
+	};
+	visitNode(sourceFile);
+	return !hasReactRuntime && (hasNonReactRuntime || hasNonReactMarker);
+};
+//#endregion
+//#region ../core/src/react-cleanup/detect-duplicate-jsx-subtrees.ts
+const isJsxSubtreeNode = (node) => typescriptBinding.isJsxElement(node) || typescriptBinding.isJsxSelfClosingElement(node) || typescriptBinding.isJsxFragment(node);
+const resolveOptions = (options) => ({
+	minimumNodeCount: options.minimumNodeCount ?? 6,
+	minimumDepth: options.minimumDepth ?? 3,
+	minimumOccurrences: options.minimumOccurrences ?? 2,
+	minimumDistinctFiles: options.minimumDistinctFiles ?? 1,
+	maxSourceFiles: options.budget?.maxSourceFiles ?? 5e3,
+	maxSourceLengthChars: options.budget?.maxSourceLengthChars ?? 1e6,
+	maxJsxNodes: options.budget?.maxJsxNodes ?? 5e4,
+	maxFamilies: options.budget?.maxFamilies ?? 20
+});
+const hashParts = (parts) => {
+	let framedParts = "";
+	for (const part of parts) framedParts += `${part.length}:${part}`;
+	return crypto.hash("sha256", framedParts, "hex");
+};
+const collectDirectJsxDescendants = (node) => {
+	const descendants = [];
+	const pendingNodes = [];
+	typescriptBinding.forEachChild(node, (child) => {
+		pendingNodes.push(child);
+	});
+	while (pendingNodes.length > 0) {
+		const currentNode = pendingNodes.pop();
+		if (currentNode === void 0) continue;
+		if (isJsxSubtreeNode(currentNode)) {
+			descendants.push(currentNode);
+			continue;
+		}
+		typescriptBinding.forEachChild(currentNode, (child) => {
+			pendingNodes.push(child);
+		});
+	}
+	return descendants;
+};
+const buildStructuralHash = (node, metadataByNode) => {
+	if (isJsxSubtreeNode(node)) return buildJsxSubtreeMetadata(node, metadataByNode).fingerprint;
+	if (typescriptBinding.isJsxText(node)) return node.getText().trim().length === 0 ? "jsx-whitespace" : "jsx-text";
+	if (typescriptBinding.isPropertyAccessExpression(node)) return hashParts([
+		"property-access",
+		node.questionDotToken === void 0 ? "required" : "optional",
+		buildStructuralHash(node.expression, metadataByNode),
+		node.name.text
+	]);
+	if (typescriptBinding.isElementAccessExpression(node)) {
+		const argumentHash = typescriptBinding.isStringLiteral(node.argumentExpression) || typescriptBinding.isNumericLiteral(node.argumentExpression) ? `${typescriptBinding.SyntaxKind[node.argumentExpression.kind]}:${node.argumentExpression.text}` : buildStructuralHash(node.argumentExpression, metadataByNode);
+		return hashParts([
+			"element-access",
+			node.questionDotToken === void 0 ? "required" : "optional",
+			buildStructuralHash(node.expression, metadataByNode),
+			argumentHash
+		]);
+	}
+	if (typescriptBinding.isBinaryExpression(node)) return hashParts([
+		"binary-expression",
+		typescriptBinding.SyntaxKind[node.operatorToken.kind],
+		buildStructuralHash(node.left, metadataByNode),
+		buildStructuralHash(node.right, metadataByNode)
+	]);
+	if (typescriptBinding.isPrefixUnaryExpression(node) || typescriptBinding.isPostfixUnaryExpression(node)) return hashParts([
+		typescriptBinding.SyntaxKind[node.kind],
+		typescriptBinding.SyntaxKind[node.operator],
+		buildStructuralHash(node.operand, metadataByNode)
+	]);
+	if (typescriptBinding.isIdentifier(node)) return "identifier";
+	if (typescriptBinding.isStringLiteral(node) || typescriptBinding.isNumericLiteral(node) || typescriptBinding.isNoSubstitutionTemplateLiteral(node) || typescriptBinding.isRegularExpressionLiteral(node)) return typescriptBinding.SyntaxKind[node.kind];
+	if (typescriptBinding.isJsxAttribute(node)) {
+		let initializerHash = "present";
+		if (node.initializer !== void 0) if (typescriptBinding.isStringLiteral(node.initializer)) initializerHash = `string:${node.initializer.text}`;
+		else if (typescriptBinding.isJsxExpression(node.initializer) && node.initializer.expression !== void 0 && (typescriptBinding.isStringLiteral(node.initializer.expression) || typescriptBinding.isNumericLiteral(node.initializer.expression) || node.initializer.expression.kind === typescriptBinding.SyntaxKind.TrueKeyword || node.initializer.expression.kind === typescriptBinding.SyntaxKind.FalseKeyword || node.initializer.expression.kind === typescriptBinding.SyntaxKind.NullKeyword)) initializerHash = `static:${node.initializer.expression.getText()}`;
+		else initializerHash = buildStructuralHash(node.initializer, metadataByNode);
+		return hashParts([
+			"attribute",
+			node.name.getText(),
+			initializerHash
+		]);
+	}
+	if (typescriptBinding.isPropertyAssignment(node)) return hashParts([
+		"property-assignment",
+		node.name.getText(),
+		buildStructuralHash(node.initializer, metadataByNode)
+	]);
+	if (typescriptBinding.isShorthandPropertyAssignment(node)) return hashParts(["shorthand-property", node.name.text]);
+	if (typescriptBinding.isJsxSpreadAttribute(node)) return hashParts(["spread", buildStructuralHash(node.expression, metadataByNode)]);
+	const childHashes = [];
+	typescriptBinding.forEachChild(node, (child) => {
+		childHashes.push(buildStructuralHash(child, metadataByNode));
+	});
+	return hashParts([typescriptBinding.SyntaxKind[node.kind], ...childHashes]);
+};
+const buildJsxSubtreeMetadata = (node, metadataByNode) => {
+	const existingMetadata = metadataByNode.get(node);
+	if (existingMetadata) return existingMetadata;
+	const descendantMetadata = collectDirectJsxDescendants(node).map((descendant) => buildJsxSubtreeMetadata(descendant, metadataByNode));
+	const nodeParts = [typescriptBinding.SyntaxKind[node.kind]];
+	if (typescriptBinding.isJsxElement(node)) nodeParts.push(node.openingElement.tagName.getText());
+	else if (typescriptBinding.isJsxSelfClosingElement(node)) nodeParts.push(node.tagName.getText());
+	else nodeParts.push("fragment");
+	typescriptBinding.forEachChild(node, (child) => {
+		if (typescriptBinding.isJsxClosingElement(child) || typescriptBinding.isJsxClosingFragment(child)) return;
+		if (typescriptBinding.isJsxText(child) && child.getText().trim().length === 0) return;
+		if (typescriptBinding.isJsxExpression(child) && child.expression === void 0) return;
+		nodeParts.push(buildStructuralHash(child, metadataByNode));
+	});
+	const metadata = {
+		fingerprint: `jsx:${hashParts(nodeParts)}`,
+		nodeCount: 1 + descendantMetadata.reduce((total, descendant) => total + descendant.nodeCount, 0),
+		depth: 1 + descendantMetadata.reduce((maximum, descendant) => Math.max(maximum, descendant.depth), 0)
+	};
+	metadataByNode.set(node, metadata);
+	return metadata;
+};
+const getRootName = (node) => {
+	if (typescriptBinding.isJsxElement(node)) return node.openingElement.tagName.getText();
+	if (typescriptBinding.isJsxSelfClosingElement(node)) return node.tagName.getText();
+	return "Fragment";
+};
+const getFunctionIdentity = (node, identityByNode) => {
+	if (identityByNode.has(node)) return identityByNode.get(node) ?? null;
+	const traversedNodes = [node];
+	let currentNode = node.parent;
+	let functionIdentity = null;
+	while (currentNode !== void 0) {
+		if (identityByNode.has(currentNode)) {
+			functionIdentity = identityByNode.get(currentNode) ?? null;
+			break;
+		}
+		traversedNodes.push(currentNode);
+		if (typescriptBinding.isFunctionDeclaration(currentNode)) {
+			if (currentNode.name !== void 0) {
+				functionIdentity = {
+					name: currentNode.name.text,
+					startOffset: currentNode.getStart()
+				};
+				break;
+			}
+			if (typescriptBinding.getModifiers(currentNode)?.some((modifier) => modifier.kind === typescriptBinding.SyntaxKind.DefaultKeyword)) {
+				functionIdentity = {
+					name: "default export",
+					startOffset: currentNode.getStart()
+				};
+				break;
+			}
+		}
+		if (typescriptBinding.isMethodDeclaration(currentNode)) {
+			const classDeclaration = currentNode.parent;
+			if (typescriptBinding.isClassDeclaration(classDeclaration) && classDeclaration.name !== void 0) {
+				functionIdentity = {
+					name: classDeclaration.name.text,
+					startOffset: classDeclaration.getStart()
+				};
+				break;
+			}
+			functionIdentity = {
+				name: currentNode.name.getText(),
+				startOffset: currentNode.getStart()
+			};
+			break;
+		}
+		if (typescriptBinding.isFunctionExpression(currentNode) && currentNode.name !== void 0) {
+			functionIdentity = {
+				name: currentNode.name.text,
+				startOffset: currentNode.getStart()
+			};
+			break;
+		}
+		if (typescriptBinding.isArrowFunction(currentNode) || typescriptBinding.isFunctionExpression(currentNode)) {
+			let assignmentNode = currentNode.parent;
+			while (assignmentNode !== void 0 && (typescriptBinding.isCallExpression(assignmentNode) || typescriptBinding.isExpressionWithTypeArguments(assignmentNode) || typescriptBinding.isExpression(assignmentNode) && unwrapTypescriptExpression(assignmentNode) !== assignmentNode)) assignmentNode = assignmentNode.parent;
+			if (assignmentNode !== void 0 && typescriptBinding.isVariableDeclaration(assignmentNode)) {
+				functionIdentity = {
+					name: assignmentNode.name.getText(),
+					startOffset: assignmentNode.getStart()
+				};
+				break;
+			}
+			if (assignmentNode !== void 0 && typescriptBinding.isPropertyAssignment(assignmentNode)) {
+				functionIdentity = {
+					name: assignmentNode.name.getText(),
+					startOffset: assignmentNode.getStart()
+				};
+				break;
+			}
+			if (assignmentNode !== void 0 && typescriptBinding.isExportAssignment(assignmentNode) && !assignmentNode.isExportEquals) {
+				functionIdentity = {
+					name: "default export",
+					startOffset: assignmentNode.getStart()
+				};
+				break;
+			}
+		}
+		currentNode = currentNode.parent;
+	}
+	for (const traversedNode of traversedNodes) identityByNode.set(traversedNode, functionIdentity);
+	return functionIdentity;
+};
+const buildOccurrence = (path, sourceFile, node, ancestorRootNames, functionIdentityByNode) => {
+	const startOffset = node.getStart(sourceFile);
+	const endOffset = node.getEnd();
+	const start = sourceFile.getLineAndCharacterOfPosition(startOffset);
+	const end = sourceFile.getLineAndCharacterOfPosition(endOffset);
+	const functionIdentity = getFunctionIdentity(node, functionIdentityByNode);
+	const compositionPath = [...ancestorRootNames, getRootName(node)];
+	if (functionIdentity !== null) compositionPath.unshift(functionIdentity.name);
+	return {
+		path,
+		startOffset,
+		endOffset,
+		startLine: start.line + 1,
+		startColumn: start.character + 1,
+		endLine: end.line + 1,
+		endColumn: end.character + 1,
+		rootName: getRootName(node),
+		parentRootName: ancestorRootNames.at(-1) ?? null,
+		compositionPath,
+		compositionRootStartOffset: functionIdentity?.startOffset ?? null
+	};
+};
+const collectCandidates = (source, sourceFile, signal, maximumCandidateCount) => {
+	const jsxNodes = [];
+	const pendingNodes = [sourceFile];
+	let limitExceeded = false;
+	while (pendingNodes.length > 0 && !limitExceeded && !signal?.aborted) {
+		const currentNode = pendingNodes.pop();
+		if (currentNode === void 0) continue;
+		if (isJsxSubtreeNode(currentNode)) {
+			if (jsxNodes.length >= maximumCandidateCount) {
+				limitExceeded = true;
+				continue;
+			}
+			jsxNodes.push(currentNode);
+		}
+		const childNodes = [];
+		typescriptBinding.forEachChild(currentNode, (child) => {
+			childNodes.push(child);
+		});
+		for (let childIndex = childNodes.length - 1; childIndex >= 0; childIndex -= 1) pendingNodes.push(childNodes[childIndex]);
+	}
+	if (limitExceeded || signal?.aborted) return {
+		candidates: [],
+		aborted: signal?.aborted ?? false,
+		limitExceeded
+	};
+	const metadataByNode = /* @__PURE__ */ new Map();
+	const functionIdentityByNode = /* @__PURE__ */ new Map();
+	for (let nodeIndex = jsxNodes.length - 1; nodeIndex >= 0; nodeIndex -= 1) {
+		if (signal?.aborted) return {
+			candidates: [],
+			aborted: true,
+			limitExceeded: false
+		};
+		buildJsxSubtreeMetadata(jsxNodes[nodeIndex], metadataByNode);
+	}
+	return {
+		candidates: jsxNodes.map((node) => {
+			const ancestorRootNames = [];
+			let ancestorNode = node.parent;
+			while (ancestorNode !== void 0 && ancestorRootNames.length < 19) {
+				if (isJsxSubtreeNode(ancestorNode)) ancestorRootNames.unshift(getRootName(ancestorNode));
+				ancestorNode = ancestorNode.parent;
+			}
+			return {
+				metadata: buildJsxSubtreeMetadata(node, metadataByNode),
+				occurrence: buildOccurrence(source.path, sourceFile, node, ancestorRootNames, functionIdentityByNode)
+			};
+		}),
+		aborted: false,
+		limitExceeded: false
+	};
+};
+const scanSource = (input) => {
+	if (input.source.sourceText.length > input.options.maxSourceLengthChars) return {
+		candidates: [],
+		incompleteReason: {
+			kind: "source-length-limit",
+			limit: input.options.maxSourceLengthChars,
+			observed: input.source.sourceText.length,
+			path: input.source.path
+		},
+		didAbort: false,
+		didScan: false
+	};
+	const sourceFile = typescriptBinding.createSourceFile(input.source.path, input.source.sourceText, typescriptBinding.ScriptTarget.Latest, true, getTypescriptScriptKind(input.source.path));
+	if (isNonReactJsxSource(sourceFile)) return {
+		candidates: [],
+		incompleteReason: null,
+		didAbort: false,
+		didScan: true
+	};
+	const collectedCandidates = collectCandidates(input.source, sourceFile, input.signal, input.options.maxJsxNodes - input.scannedJsxNodeCount);
+	if (collectedCandidates.aborted) return {
+		candidates: [],
+		incompleteReason: {
+			kind: "aborted",
+			observed: input.scannedSourceFileCount
+		},
+		didAbort: true,
+		didScan: false
+	};
+	if (collectedCandidates.limitExceeded) return {
+		candidates: [],
+		incompleteReason: {
+			kind: "jsx-node-limit",
+			limit: input.options.maxJsxNodes,
+			observed: input.options.maxJsxNodes + 1,
+			path: input.source.path
+		},
+		didAbort: false,
+		didScan: false
+	};
+	return {
+		candidates: collectedCandidates.candidates,
+		incompleteReason: null,
+		didAbort: false,
+		didScan: true
+	};
+};
+const occurrenceIsContained = (inner, outer) => inner.path === outer.path && inner.startOffset >= outer.startOffset && inner.endOffset <= outer.endOffset;
+const familyIsNestedWithin = (candidate, outer) => {
+	const outerOccurrences = [outer.primaryOccurrence, ...outer.relatedOccurrences];
+	return [candidate.primaryOccurrence, ...candidate.relatedOccurrences].every((occurrence) => outerOccurrences.some((outerOccurrence) => occurrenceIsContained(occurrence, outerOccurrence)));
+};
+const suppressNestedFamilies = (families) => {
+	const familiesBySize = [...families].sort((left, right) => right.nodeCount - left.nodeCount || right.depth - left.depth);
+	const maximalFamilies = [];
+	for (const family of familiesBySize) {
+		if (maximalFamilies.some((outer) => familyIsNestedWithin(family, outer))) continue;
+		maximalFamilies.push(family);
+	}
+	return maximalFamilies;
+};
+const compareOccurrences = (left, right) => left.path.localeCompare(right.path) || left.startOffset - right.startOffset || left.endOffset - right.endOffset;
+const compareFamilies = (left, right) => right.estimatedRemovableNodeCount - left.estimatedRemovableNodeCount || right.estimatedRemovableLineCount - left.estimatedRemovableLineCount || right.occurrenceCount - left.occurrenceCount || right.distinctFileCount - left.distinctFileCount || right.nodeCount - left.nodeCount || compareOccurrences(left.primaryOccurrence, right.primaryOccurrence) || left.fingerprint.localeCompare(right.fingerprint);
+const buildFamilies = (candidates, options) => {
+	const bucketsByFingerprint = /* @__PURE__ */ new Map();
+	for (const candidate of candidates) {
+		if (candidate.metadata.nodeCount < options.minimumNodeCount) continue;
+		if (candidate.metadata.depth < options.minimumDepth) continue;
+		const existingBucket = bucketsByFingerprint.get(candidate.metadata.fingerprint);
+		if (existingBucket) existingBucket.occurrences.push(candidate.occurrence);
+		else bucketsByFingerprint.set(candidate.metadata.fingerprint, {
+			metadata: candidate.metadata,
+			occurrences: [candidate.occurrence]
+		});
+	}
+	const families = [];
+	const familyProcessingLimit = Math.max(options.maxFamilies * 10, options.maxFamilies + 1);
+	for (const bucket of bucketsByFingerprint.values()) {
+		if (bucket.occurrences.length < options.minimumOccurrences) continue;
+		bucket.occurrences.sort(compareOccurrences);
+		const distinctFileCount = new Set(bucket.occurrences.map((occurrence) => occurrence.path)).size;
+		if (distinctFileCount < options.minimumDistinctFiles) continue;
+		if (distinctFileCount === 1) {
+			const compositionRootOffsets = /* @__PURE__ */ new Set();
+			for (const occurrence of bucket.occurrences) if (occurrence.compositionRootStartOffset !== null) compositionRootOffsets.add(occurrence.compositionRootStartOffset);
+			if (compositionRootOffsets.size < 2) continue;
+		}
+		families.push({
+			fingerprint: bucket.metadata.fingerprint,
+			nodeCount: bucket.metadata.nodeCount,
+			depth: bucket.metadata.depth,
+			occurrenceCount: bucket.occurrences.length,
+			distinctFileCount,
+			estimatedRemovableNodeCount: bucket.metadata.nodeCount * (bucket.occurrences.length - 1),
+			estimatedRemovableLineCount: bucket.occurrences.reduce((total, occurrence) => total + occurrence.endLine - occurrence.startLine + 1, 0) - Math.max(...bucket.occurrences.map((occurrence) => occurrence.endLine - occurrence.startLine + 1)),
+			primaryOccurrence: bucket.occurrences[0],
+			relatedOccurrences: bucket.occurrences.slice(1)
+		});
+		if (families.length > familyProcessingLimit) break;
+	}
+	return { families: suppressNestedFamilies(families).sort(compareFamilies) };
+};
+const buildResult = (input) => {
+	return {
+		families: buildFamilies(input.candidates, input.options).families.slice(0, input.options.maxFamilies),
+		scannedSourceFileCount: input.scannedSourceFileCount,
+		scannedJsxNodeCount: input.scannedJsxNodeCount,
+		incomplete: input.incompleteReasons.length > 0,
+		incompleteReasons: input.incompleteReasons
+	};
+};
+const detectDuplicateJsxSubtreesCooperative = async (sourceReader, options = {}) => {
+	const resolvedOptions = resolveOptions(options);
+	const incompleteReasons = [];
+	const sortedPaths = sourceReader.paths.filter((sourcePath) => JSX_DUPLICATION_SOURCE_FILE_PATTERN.test(sourcePath)).sort((left, right) => left.localeCompare(right));
+	if (sortedPaths.length > resolvedOptions.maxSourceFiles) incompleteReasons.push({
+		kind: "source-file-limit",
+		limit: resolvedOptions.maxSourceFiles,
+		observed: sortedPaths.length
+	});
+	const candidates = [];
+	let scannedSourceFileCount = 0;
+	let scannedJsxNodeCount = 0;
+	const scannedPaths = sortedPaths.slice(0, resolvedOptions.maxSourceFiles);
+	const readAhead = (pathIndex) => {
+		if (pathIndex >= scannedPaths.length) return null;
+		const pendingRead = sourceReader.read(scannedPaths[pathIndex], resolvedOptions.maxSourceLengthChars);
+		pendingRead.catch(() => void 0);
+		return pendingRead;
+	};
+	let pendingRead = readAhead(0);
+	for (const [pathIndex, sourcePath] of scannedPaths.entries()) {
+		if (options.signal?.aborted) {
+			incompleteReasons.push({
+				kind: "aborted",
+				observed: scannedSourceFileCount
+			});
+			break;
+		}
+		const sourceText = await pendingRead;
+		pendingRead = readAhead(pathIndex + 1);
+		if (sourceText === null) continue;
+		const scannedSource = scanSource({
+			source: {
+				path: sourcePath,
+				sourceText
+			},
+			options: resolvedOptions,
+			signal: options.signal,
+			scannedSourceFileCount,
+			scannedJsxNodeCount
+		});
+		if (scannedSource.incompleteReason !== null) incompleteReasons.push(scannedSource.incompleteReason);
+		if (scannedSource.didScan) {
+			candidates.push(...scannedSource.candidates);
+			scannedJsxNodeCount += scannedSource.candidates.length;
+			scannedSourceFileCount += 1;
+		}
+		if (scannedSource.didAbort) break;
+		await yieldToEventLoop();
+	}
+	return buildResult({
+		candidates,
+		options: resolvedOptions,
+		incompleteReasons,
+		scannedSourceFileCount,
+		scannedJsxNodeCount
+	});
+};
+//#endregion
+//#region ../core/src/start-duplicate-jsx-worker.ts
+const serializeError = (error) => error instanceof Error ? {
+	name: error.name,
+	message: error.message,
+	stack: error.stack
+} : { message: String(error) };
+const isWorkerCommand = (value) => typeof value === "object" && value !== null && "type" in value && (value.type === "detect" || value.type === "abort") && "id" in value && typeof value.id === "number";
+const startDuplicateJsxWorker = () => {
+	if (parentPort === null) throw new Error("Duplicate JSX worker must run as a worker thread.");
+	const port = parentPort;
+	const abortControllersById = /* @__PURE__ */ new Map();
+	let queue = Promise.resolve();
+	const reply = (message) => port.postMessage(message);
+	const detect = async (request) => {
+		const abortController = abortControllersById.get(request.id);
+		if (abortController === void 0) return;
+		try {
+			const result = await detectDuplicateJsxSubtreesCooperative(createJsxSourceReader({
+				rootDirectory: request.rootDirectory,
+				sourceFiles: request.sourceFiles,
+				useBlockingReads: true
+			}), { signal: abortController.signal });
+			reply({
+				id: request.id,
+				ok: true,
+				result
+			});
+		} catch (error) {
+			reply({
+				id: request.id,
+				ok: false,
+				error: serializeError(error)
+			});
+		} finally {
+			abortControllersById.delete(request.id);
+		}
+	};
+	port.on("message", (message) => {
+		if (!isWorkerCommand(message)) return;
+		if (message.type === "abort") {
+			abortControllersById.get(message.id)?.abort();
+			return;
+		}
+		abortControllersById.set(message.id, new AbortController());
+		queue = queue.then(() => detect(message));
+	});
+};
+//#endregion
+//#region src/duplicate-jsx-worker.ts
+startDuplicateJsxWorker();
+//#endregion
+export {};
+
+//# sourceMappingURL=duplicate-jsx-worker.js.map
+//# debugId=dd62388e-7fa5-5466-9293-75c1091a30f7

@@ -1,0 +1,76 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a379042c-0a90-505b-9438-3761c5ca2635")}catch(e){}}();
+import { y as CliInputError } from "./record-metric-AbxY4m3i.js";
+//#region src/cli/runtime-scan/constants.ts
+const RUNTIME_SCAN_MAX_COMPONENT_EVENTS = 2e3;
+const RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES = 5 * 1024 * 1024;
+const RUNTIME_SCAN_MAX_SNAPSHOT_BYTES = RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES - 64 * 1024;
+Math.floor(RUNTIME_SCAN_MAX_SNAPSHOT_BYTES / 3);
+const RUNTIME_SCAN_MAX_TRACE_BYTES = 512 * 1024 * 1024;
+const RUNTIME_SCAN_MAX_STRING_LENGTH = 4096;
+const RUNTIME_SCAN_LAYOUT_THRASH_RATIO = .25;
+const RUNTIME_SCAN_MAX_RECORDING_DURATION_MS = 300 * 1e3;
+const RUNTIME_SCAN_SNAPSHOT_TIMEOUT_MS = 1e4;
+const RUNTIME_SCAN_LOCAL_DEV_PORTS = [
+	1234,
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 3e3 + portOffset),
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 4e3 + portOffset),
+	4173,
+	4200,
+	4321,
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 5e3 + portOffset),
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 5173 + portOffset),
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 8e3 + portOffset),
+	...Array.from({ length: 11 }, (_unusedValue, portOffset) => 8080 + portOffset),
+	8888
+];
+const RUNTIME_SCAN_BROWSER_WIDTH_PX = 1440;
+const RUNTIME_SCAN_TRACE_FILE_EXTENSION = ".json.gz";
+const RUNTIME_SCAN_TRACING_COMPLETE_TIMEOUT_MS = 6e4;
+const RUNTIME_SCAN_PROBE_RELATIVE_PATH = "runtime-scan/browser-probe.iife.js";
+const RUNTIME_SCAN_PROBE_SNAPSHOT_BINDING_NAME_PLACEHOLDER = "__REACT_DOCTOR_RUNTIME_SCAN_CAPTURE__";
+const RUNTIME_SCAN_PROBE_SNAPSHOT_ATTRIBUTE_NAME_PLACEHOLDER = "data-react-doctor-runtime-scan-snapshot";
+const RUNTIME_SCAN_PROBE_SNAPSHOT_TOKEN_PLACEHOLDER = "__REACT_DOCTOR_RUNTIME_SCAN_TOKEN__";
+const RUNTIME_SCAN_SAFE_CDP_PAGE_URLS = [
+	"about:blank",
+	"chrome://newtab/",
+	"chrome://new-tab-page/"
+];
+const RUNTIME_SCAN_CONTROL_CHARACTERS_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+const RUNTIME_SCAN_TRACE_CATEGORIES = [
+	"-*",
+	"blink.console",
+	"blink.user_timing",
+	"devtools.timeline",
+	"disabled-by-default-devtools.timeline",
+	"disabled-by-default-devtools.timeline.invalidationTracking",
+	"disabled-by-default-devtools.timeline.frame",
+	"disabled-by-default-devtools.timeline.stack",
+	"disabled-by-default-v8.cpu_profiler",
+	"disabled-by-default-v8.cpu_profiler.hires",
+	"latencyInfo",
+	"loading",
+	"v8",
+	"v8.execute"
+];
+//#endregion
+//#region src/cli/runtime-scan/sanitize-runtime-url.ts
+const sanitizeRuntimeUrl = (rawUrl) => {
+	let parsedUrl;
+	try {
+		parsedUrl = new URL(rawUrl);
+	} catch {
+		throw new CliInputError(`Expected an absolute http(s) URL, received "${rawUrl}".`);
+	}
+	if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") throw new CliInputError(`Expected an http(s) URL, received "${parsedUrl.protocol}".`);
+	parsedUrl.username = "";
+	parsedUrl.password = "";
+	parsedUrl.search = "";
+	parsedUrl.hash = "";
+	return parsedUrl.href;
+};
+//#endregion
+export { RUNTIME_SCAN_SNAPSHOT_TIMEOUT_MS as _, RUNTIME_SCAN_LOCAL_DEV_PORTS as a, RUNTIME_SCAN_TRACING_COMPLETE_TIMEOUT_MS as b, RUNTIME_SCAN_MAX_SNAPSHOT_BYTES as c, RUNTIME_SCAN_MAX_TRACE_BYTES as d, RUNTIME_SCAN_PROBE_RELATIVE_PATH as f, RUNTIME_SCAN_SAFE_CDP_PAGE_URLS as g, RUNTIME_SCAN_PROBE_SNAPSHOT_TOKEN_PLACEHOLDER as h, RUNTIME_SCAN_LAYOUT_THRASH_RATIO as i, RUNTIME_SCAN_MAX_SNAPSHOT_PAYLOAD_BYTES as l, RUNTIME_SCAN_PROBE_SNAPSHOT_BINDING_NAME_PLACEHOLDER as m, RUNTIME_SCAN_BROWSER_WIDTH_PX as n, RUNTIME_SCAN_MAX_COMPONENT_EVENTS as o, RUNTIME_SCAN_PROBE_SNAPSHOT_ATTRIBUTE_NAME_PLACEHOLDER as p, RUNTIME_SCAN_CONTROL_CHARACTERS_PATTERN as r, RUNTIME_SCAN_MAX_RECORDING_DURATION_MS as s, sanitizeRuntimeUrl as t, RUNTIME_SCAN_MAX_STRING_LENGTH as u, RUNTIME_SCAN_TRACE_CATEGORIES as v, RUNTIME_SCAN_TRACE_FILE_EXTENSION as y };
+
+//# sourceMappingURL=sanitize-runtime-url-RZN3i1Kf.js.map
+//# debugId=a379042c-0a90-505b-9438-3761c5ca2635

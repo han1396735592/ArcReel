@@ -1,0 +1,24 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6cccb089-da68-54cb-bd96-609808289f31")}catch(e){}}();
+import { Gn as isPlainObject } from "./record-metric-AbxY4m3i.js";
+import * as fs$1 from "node:fs";
+import { parseJSON5 } from "confbox";
+//#region src/cli/utils/read-object-file.ts
+/**
+* Reads a JSON / JSONC file as a plain object, or `null` when it is missing,
+* unparseable, or not an object. JSON5 parsing tolerates comments and
+* trailing commas so hand-edited config files round-trip.
+*/
+const readObjectFile = (filePath) => {
+	try {
+		const parsed = parseJSON5(fs$1.readFileSync(filePath, "utf-8"));
+		return isPlainObject(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+};
+//#endregion
+export { readObjectFile as t };
+
+//# sourceMappingURL=read-object-file-D9jF1KIF.js.map
+//# debugId=6cccb089-da68-54cb-bd96-609808289f31

@@ -1,0 +1,28 @@
+//#region src/cli/utils/active-scan-abort-registry.ts
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e0d0ca7d-c392-5d1c-a559-9a81595ca671")}catch(e){}}();
+const activeScanAbortControllers = /* @__PURE__ */ new Set();
+const activeScanCleanups = /* @__PURE__ */ new Set();
+const activeScanAbortRegistry = {
+	register: (controller) => {
+		activeScanAbortControllers.add(controller);
+		return () => activeScanAbortControllers.delete(controller);
+	},
+	registerCleanup: (cleanup) => {
+		activeScanCleanups.add(cleanup);
+		return () => activeScanCleanups.delete(cleanup);
+	},
+	abortAll: async () => {
+		const controllers = [...activeScanAbortControllers];
+		const cleanups = [...activeScanCleanups];
+		activeScanAbortControllers.clear();
+		activeScanCleanups.clear();
+		for (const controller of controllers) controller.abort();
+		await Promise.allSettled(cleanups.map((cleanup) => cleanup()));
+	}
+};
+//#endregion
+export { activeScanAbortRegistry as t };
+
+//# sourceMappingURL=active-scan-abort-registry-CCTgal0O.js.map
+//# debugId=e0d0ca7d-c392-5d1c-a559-9a81595ca671

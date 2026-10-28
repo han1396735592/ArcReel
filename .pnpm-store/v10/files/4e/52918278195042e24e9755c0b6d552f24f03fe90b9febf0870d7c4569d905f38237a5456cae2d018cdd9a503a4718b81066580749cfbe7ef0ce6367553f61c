@@ -1,0 +1,16 @@
+import { createRequire } from "node:module";
+//#region \0react-doctor:require-typescript
+const requireTypescript = createRequire(import.meta.url);
+const loadTypescript = () => {
+	const realModule = requireTypescript("typescript");
+	typescriptBinding = realModule;
+	return realModule;
+};
+let typescriptBinding = new Proxy({}, {
+	get: (_target, key) => Reflect.get(loadTypescript(), key),
+	has: (_target, key) => Reflect.has(loadTypescript(), key)
+});
+//#endregion
+export { typescriptBinding as t };
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ad041add-451a-54d8-9d3a-b264e28ea9a8")}catch(e){}}();
+//# debugId=ad041add-451a-54d8-9d3a-b264e28ea9a8

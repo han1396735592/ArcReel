@@ -1,0 +1,9 @@
+export var TITLE = 'Weights & Biases';
+export var COMBINE_TEXT_MULTIPLE = 1;
+export var COMBINE_SPACE_MULTIPLE = 0.25;
+export var COLOR_PRIMARY = '#FFCC33';
+
+// Avatar constants
+export var AVATAR_BACKGROUND = '#171A1F';
+export var AVATAR_COLOR = COLOR_PRIMARY;
+export var AVATAR_ICON_MULTIPLE = 0.6;

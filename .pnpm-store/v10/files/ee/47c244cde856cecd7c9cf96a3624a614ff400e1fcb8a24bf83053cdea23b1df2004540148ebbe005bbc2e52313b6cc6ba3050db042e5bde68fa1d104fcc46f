@@ -1,0 +1,1029 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="538f795a-ce66-5950-bf7f-048038bff5f8")}catch(e){}}();
+import { t as typescriptBinding } from "./_react-doctor_require-typescript-DXQDYeWK.js";
+import { t as unwrapTypescriptExpression } from "./unwrap-typescript-expression-CrEPQUWz.js";
+import { i as isErrnoException, n as isPlainObject, r as readDirectoryEntries, t as isFile } from "./fs-utils-C88IbqFa.js";
+import { createRequire } from "node:module";
+import * as fs$1 from "node:fs";
+import * as path$1 from "node:path";
+import { parentPort } from "node:worker_threads";
+import { ResolverFactory } from "oxc-resolver";
+//#region ../core/src/utils/strip-utf8-bom.ts
+const UTF8_BOM_CHARACTER = "﻿";
+const stripUtf8Bom = (content) => content.startsWith(UTF8_BOM_CHARACTER) ? content.slice(1) : content;
+//#endregion
+//#region ../core/src/project-info/package-json.ts
+const cachedPackageJsons = /* @__PURE__ */ new Map();
+const readPackageJsonUncached = (packageJsonPath) => {
+	try {
+		return JSON.parse(stripUtf8Bom(fs$1.readFileSync(packageJsonPath, "utf-8")));
+	} catch (error) {
+		if (error instanceof SyntaxError) return {};
+		if (isErrnoException(error)) {
+			const { code } = error;
+			if (code === "EISDIR" || code === "EACCES" || code === "EPERM" || code === "ENOENT") return {};
+		}
+		throw error;
+	}
+};
+const readPackageJson = (packageJsonPath) => {
+	const absolutePath = path$1.resolve(packageJsonPath);
+	const cached = cachedPackageJsons.get(absolutePath);
+	if (cached !== void 0) return cached;
+	const result = readPackageJsonUncached(absolutePath);
+	cachedPackageJsons.set(absolutePath, result);
+	return result;
+};
+//#endregion
+//#region ../core/src/project-info/monorepo-root.ts
+const isMonorepoRoot = (directory) => {
+	if (isFile(path$1.join(directory, "pnpm-workspace.yaml"))) return true;
+	if (isFile(path$1.join(directory, "nx.json"))) return true;
+	const packageJsonPath = path$1.join(directory, "package.json");
+	if (!isFile(packageJsonPath)) return false;
+	const packageJson = readPackageJson(packageJsonPath);
+	return Array.isArray(packageJson.workspaces) || Boolean(packageJson.workspaces?.packages);
+};
+//#endregion
+//#region ../core/src/utils/is-project-boundary.ts
+/**
+* True when `directory` looks like a project root we shouldn't walk
+* past — either the working tree's git root (a `.git` entry sits
+* here) or an npm/pnpm/yarn/bun monorepo root.
+*
+* Used as the stop-condition for the ancestor walks performed by
+* `detectUserLintConfigPaths`, `loadConfigWithSource`, and
+* `detectReactCompiler`. All three previously inlined their own
+* byte-equivalent copy.
+*/
+const isProjectBoundary = (directory) => fs$1.existsSync(path$1.join(directory, ".git")) || isMonorepoRoot(directory);
+//#endregion
+//#region ../core/src/project-info/is-local-module-specifier.ts
+const isLocalModuleSpecifier = (moduleSpecifier) => moduleSpecifier === "." || moduleSpecifier === ".." || moduleSpecifier.startsWith("./") || moduleSpecifier.startsWith("../") || path$1.isAbsolute(moduleSpecifier);
+//#endregion
+//#region ../core/src/project-info/detect-nextjs-static-export.ts
+const NEXT_CONFIG_FILENAMES = [
+	"next.config.js",
+	"next.config.mjs",
+	"next.config.ts",
+	"next.config.cjs"
+];
+//#endregion
+//#region ../core/src/project-info/react-compiler-config-evaluator.ts
+const BABEL_CONFIG_FILENAMES = [
+	".babelrc",
+	".babelrc.js",
+	".babelrc.json",
+	".babelrc.cjs",
+	".babelrc.mjs",
+	".babelrc.cts",
+	"babel.config.js",
+	"babel.config.json",
+	"babel.config.cjs",
+	"babel.config.mjs",
+	"babel.config.ts",
+	"babel.config.cts"
+];
+const VITE_CONFIG_FILENAMES = [
+	"vite.config.js",
+	"vite.config.ts",
+	"vite.config.mjs",
+	"vite.config.mts",
+	"vite.config.cjs",
+	"vite.config.cts",
+	"vitest.config.ts",
+	"vitest.config.js"
+];
+const RSBUILD_CONFIG_FILENAMES = [
+	"rsbuild.config.ts",
+	"rsbuild.config.js",
+	"rsbuild.config.mts",
+	"rsbuild.config.mjs",
+	"rsbuild.config.cts",
+	"rsbuild.config.cjs"
+];
+const RSPACK_CONFIG_FILENAMES = [
+	"rspack.config.ts",
+	"rspack.config.js",
+	"rspack.config.mts",
+	"rspack.config.mjs",
+	"rspack.config.cts",
+	"rspack.config.cjs"
+];
+const EXPO_APP_CONFIG_FILENAMES = [
+	"app.json",
+	"app.config.js",
+	"app.config.ts"
+];
+const REACT_COMPILER_CONFIG_FILENAMES = [
+	...NEXT_CONFIG_FILENAMES,
+	...BABEL_CONFIG_FILENAMES,
+	...VITE_CONFIG_FILENAMES,
+	...RSBUILD_CONFIG_FILENAMES,
+	...RSPACK_CONFIG_FILENAMES,
+	...EXPO_APP_CONFIG_FILENAMES
+];
+const REACT_COMPILER_CONFIG_SOURCE_EXTENSIONS = [
+	".js",
+	".jsx",
+	".ts",
+	".tsx",
+	".mjs",
+	".mts",
+	".cjs",
+	".cts",
+	".json"
+];
+const REACT_COMPILER_CONFIG_RESOLVER = new ResolverFactory({
+	conditionNames: [
+		"import",
+		"require",
+		"node",
+		"default"
+	],
+	extensions: REACT_COMPILER_CONFIG_SOURCE_EXTENSIONS
+});
+const resolveImportedConfigFile = (fromFilePath, moduleSpecifier) => {
+	if (!isLocalModuleSpecifier(moduleSpecifier)) {
+		try {
+			const resolvedPath = REACT_COMPILER_CONFIG_RESOLVER.resolveFileSync(fromFilePath, moduleSpecifier).path;
+			if (resolvedPath && isFile(resolvedPath)) return resolvedPath;
+		} catch {}
+		try {
+			const resolvedPath = createRequire(fromFilePath).resolve(moduleSpecifier);
+			return isFile(resolvedPath) ? resolvedPath : null;
+		} catch {
+			return null;
+		}
+	}
+	const unresolvedPath = path$1.resolve(path$1.dirname(fromFilePath), moduleSpecifier);
+	const extension = path$1.extname(unresolvedPath);
+	return (extension ? [unresolvedPath, ...REACT_COMPILER_CONFIG_SOURCE_EXTENSIONS.map((sourceExtension) => `${unresolvedPath.slice(0, -extension.length)}${sourceExtension}`)] : [
+		unresolvedPath,
+		...REACT_COMPILER_CONFIG_SOURCE_EXTENSIONS.map((sourceExtension) => `${unresolvedPath}${sourceExtension}`),
+		...REACT_COMPILER_CONFIG_SOURCE_EXTENSIONS.map((sourceExtension) => path$1.join(unresolvedPath, `index${sourceExtension}`))
+	]).find(isFile) ?? null;
+};
+const parseConfigSourceFile = (filePath, content) => filePath.endsWith(".json") || path$1.basename(filePath) === ".babelrc" ? typescriptBinding.parseJsonText(filePath, content) : typescriptBinding.createSourceFile(filePath, content, typescriptBinding.ScriptTarget.Latest, true);
+const getStaticPropertyName = (propertyName) => typescriptBinding.isIdentifier(propertyName) || typescriptBinding.isStringLiteralLike(propertyName) ? propertyName.text : typescriptBinding.isComputedPropertyName(propertyName) && typescriptBinding.isStringLiteralLike(propertyName.expression) ? propertyName.expression.text : null;
+const getAccessedPropertyName = (expression) => typescriptBinding.isPropertyAccessExpression(expression) ? expression.name.text : expression.argumentExpression && typescriptBinding.isStringLiteralLike(expression.argumentExpression) ? expression.argumentExpression.text : null;
+const isCommonJsConfigExportAssignment = (node, sourceFile) => typescriptBinding.isBinaryExpression(node) && node.operatorToken.kind === typescriptBinding.SyntaxKind.EqualsToken && (node.left.getText(sourceFile) === "module.exports" || node.left.getText(sourceFile) === "exports.default");
+const hasExportModifier = (node) => typescriptBinding.canHaveModifiers(node) && Boolean(typescriptBinding.getModifiers(node)?.some((modifier) => modifier.kind === typescriptBinding.SyntaxKind.ExportKeyword));
+const getRequireModuleSpecifier = (expression) => {
+	if (!typescriptBinding.isCallExpression(expression) || !typescriptBinding.isIdentifier(expression.expression) || expression.expression.text !== "require" || expression.arguments.length !== 1) return null;
+	const moduleSpecifier = expression.arguments[0];
+	return moduleSpecifier && typescriptBinding.isStringLiteralLike(moduleSpecifier) ? moduleSpecifier.text : null;
+};
+const bindingNameContainsIdentifier = (bindingName, identifierName) => typescriptBinding.isIdentifier(bindingName) ? bindingName.text === identifierName : bindingName.elements.some((element) => !typescriptBinding.isOmittedExpression(element) && bindingNameContainsIdentifier(element.name, identifierName));
+const hasTopLevelValueBinding = (sourceFile, bindingName) => sourceFile.statements.some((statement) => {
+	if (typescriptBinding.isImportDeclaration(statement)) {
+		const importClause = statement.importClause;
+		if (importClause?.name?.text === bindingName) return true;
+		const namedBindings = importClause?.namedBindings;
+		return namedBindings ? typescriptBinding.isNamespaceImport(namedBindings) ? namedBindings.name.text === bindingName : namedBindings.elements.some((element) => element.name.text === bindingName) : false;
+	}
+	if (typescriptBinding.isVariableStatement(statement)) return statement.declarationList.declarations.some((declaration) => bindingNameContainsIdentifier(declaration.name, bindingName));
+	return (typescriptBinding.isFunctionDeclaration(statement) || typescriptBinding.isClassDeclaration(statement)) && statement.name?.text === bindingName;
+});
+const getImportBinding = (sourceFile, bindingName) => {
+	const hasShadowedRequire = hasTopLevelValueBinding(sourceFile, "require");
+	for (const statement of sourceFile.statements) {
+		if (typescriptBinding.isImportDeclaration(statement) && statement.importClause && !statement.importClause.isTypeOnly && typescriptBinding.isStringLiteralLike(statement.moduleSpecifier)) {
+			if (statement.importClause.name?.text === bindingName) return {
+				moduleSpecifier: statement.moduleSpecifier.text,
+				exportName: "default",
+				isNamespace: false
+			};
+			const { namedBindings } = statement.importClause;
+			if (namedBindings && typescriptBinding.isNamespaceImport(namedBindings) && namedBindings.name.text === bindingName) return {
+				moduleSpecifier: statement.moduleSpecifier.text,
+				exportName: "*",
+				isNamespace: true
+			};
+			if (namedBindings && typescriptBinding.isNamedImports(namedBindings)) {
+				const importSpecifier = namedBindings.elements.find((element) => !element.isTypeOnly && element.name.text === bindingName);
+				if (importSpecifier) return {
+					moduleSpecifier: statement.moduleSpecifier.text,
+					exportName: (importSpecifier.propertyName ?? importSpecifier.name).text,
+					isNamespace: false
+				};
+			}
+		}
+		if (!typescriptBinding.isVariableStatement(statement) || hasShadowedRequire) continue;
+		for (const declaration of statement.declarationList.declarations) {
+			if (!declaration.initializer) continue;
+			if (typescriptBinding.isIdentifier(declaration.name) && declaration.name.text === bindingName) {
+				const directModuleSpecifier = getRequireModuleSpecifier(declaration.initializer);
+				if (directModuleSpecifier) return {
+					moduleSpecifier: directModuleSpecifier,
+					exportName: "default",
+					isNamespace: true
+				};
+				if (typescriptBinding.isPropertyAccessExpression(declaration.initializer) && getRequireModuleSpecifier(declaration.initializer.expression) !== null) return {
+					moduleSpecifier: getRequireModuleSpecifier(declaration.initializer.expression) ?? "",
+					exportName: declaration.initializer.name.text,
+					isNamespace: false
+				};
+			}
+			if (!typescriptBinding.isObjectBindingPattern(declaration.name)) continue;
+			const bindingElement = declaration.name.elements.find((element) => typescriptBinding.isIdentifier(element.name) && element.name.text === bindingName);
+			const moduleSpecifier = getRequireModuleSpecifier(declaration.initializer);
+			if (bindingElement && moduleSpecifier) return {
+				moduleSpecifier,
+				exportName: bindingElement.propertyName ? getStaticPropertyName(bindingElement.propertyName) ?? bindingElement.propertyName.getText(sourceFile) : bindingElement.name.getText(sourceFile),
+				isNamespace: false
+			};
+		}
+	}
+	return null;
+};
+const getTopLevelBinding = (sourceFile, bindingName) => {
+	for (const statement of sourceFile.statements) {
+		if (typescriptBinding.isVariableStatement(statement)) {
+			const declaration = statement.declarationList.declarations.find((candidate) => typescriptBinding.isIdentifier(candidate.name) && candidate.name.text === bindingName);
+			if (declaration?.initializer) return declaration.initializer;
+		}
+		if (typescriptBinding.isFunctionDeclaration(statement) && statement.name?.text === bindingName) return statement;
+	}
+	return null;
+};
+const getFunctionLocalBindings = (functionNode, argumentsList, argumentAnalysis, functionAnalysis) => {
+	const localBindings = /* @__PURE__ */ new Map();
+	functionNode.parameters.forEach((parameter, parameterIndex) => {
+		if (typescriptBinding.isIdentifier(parameter.name)) {
+			const argument = argumentsList[parameterIndex];
+			localBindings.set(parameter.name.text, {
+				expression: argument ?? parameter.initializer ?? null,
+				analysis: argument ? argumentAnalysis : functionAnalysis
+			});
+		}
+	});
+	return localBindings;
+};
+const getScopedConfigBinding = (identifier) => {
+	let childNode = identifier;
+	let currentNode = identifier.parent;
+	while (currentNode && !typescriptBinding.isSourceFile(currentNode)) {
+		if (typescriptBinding.isBlock(currentNode)) for (const statement of currentNode.statements) {
+			if (typescriptBinding.isVariableStatement(statement)) {
+				for (const declaration of statement.declarationList.declarations) if (bindingNameContainsIdentifier(declaration.name, identifier.text)) return {
+					wasFound: true,
+					initializer: statement.pos < childNode.pos && typescriptBinding.isIdentifier(declaration.name) ? declaration.initializer ?? null : null
+				};
+			}
+			if ((typescriptBinding.isFunctionDeclaration(statement) || typescriptBinding.isClassDeclaration(statement)) && statement.name?.text === identifier.text) return {
+				wasFound: true,
+				initializer: null
+			};
+		}
+		if (typescriptBinding.isCatchClause(currentNode) && currentNode.variableDeclaration && bindingNameContainsIdentifier(currentNode.variableDeclaration.name, identifier.text)) return {
+			wasFound: true,
+			initializer: typescriptBinding.isIdentifier(currentNode.variableDeclaration.name) ? currentNode.variableDeclaration.initializer ?? null : null
+		};
+		childNode = currentNode;
+		currentNode = currentNode.parent;
+	}
+	return {
+		wasFound: false,
+		initializer: null
+	};
+};
+const isCompilerTransformModule = (moduleSpecifier, exportName) => moduleSpecifier === "babel-plugin-react-compiler" && exportName === "default" || moduleSpecifier === "@vitejs/plugin-react" && exportName === "reactCompilerPreset";
+const NODE_MODULE_SPECIFIERS = new Set(["module", "node:module"]);
+const isConstantVariableInitializer = (node) => typescriptBinding.isExpression(node) && typescriptBinding.isVariableDeclaration(node.parent) && typescriptBinding.isVariableDeclarationList(node.parent.parent) && Boolean(node.parent.parent.flags & typescriptBinding.NodeFlags.Const);
+const isTransparentConfigExpression = (node) => typescriptBinding.isParenthesizedExpression(node) || typescriptBinding.isAsExpression(node) || typescriptBinding.isTypeAssertionExpression(node) || typescriptBinding.isSatisfiesExpression(node) || typescriptBinding.isNonNullExpression(node) || typescriptBinding.isAwaitExpression(node);
+const isNodeCreateRequireCall = (node, analysis) => {
+	if (isTransparentConfigExpression(node)) return isNodeCreateRequireCall(node.expression, analysis);
+	if (!typescriptBinding.isCallExpression(node)) return false;
+	const target = node.expression;
+	if (typescriptBinding.isIdentifier(target)) {
+		if (analysis.localBindings.has(target.text) || getScopedConfigBinding(target).wasFound) return false;
+		const importBinding = getImportBinding(analysis.sourceFile, target.text);
+		return Boolean(importBinding && NODE_MODULE_SPECIFIERS.has(importBinding.moduleSpecifier) && importBinding.exportName === "createRequire");
+	}
+	if (!typescriptBinding.isPropertyAccessExpression(target) && !typescriptBinding.isElementAccessExpression(target)) return false;
+	if (getAccessedPropertyName(target) !== "createRequire") return false;
+	const createRequireReceiver = target.expression;
+	if (typescriptBinding.isCallExpression(createRequireReceiver)) {
+		const requiredModuleSpecifier = getRequireModuleSpecifier(createRequireReceiver);
+		if (requiredModuleSpecifier === null || !NODE_MODULE_SPECIFIERS.has(requiredModuleSpecifier) || !typescriptBinding.isIdentifier(createRequireReceiver.expression)) return false;
+		const requireIdentifier = createRequireReceiver.expression;
+		return !analysis.localBindings.has(requireIdentifier.text) && !getScopedConfigBinding(requireIdentifier).wasFound && !hasTopLevelValueBinding(analysis.sourceFile, requireIdentifier.text);
+	}
+	if (!typescriptBinding.isIdentifier(createRequireReceiver)) return false;
+	if (analysis.localBindings.has(createRequireReceiver.text) || getScopedConfigBinding(createRequireReceiver).wasFound) return false;
+	const importBinding = getImportBinding(analysis.sourceFile, createRequireReceiver.text);
+	return Boolean(importBinding?.isNamespace && NODE_MODULE_SPECIFIERS.has(importBinding.moduleSpecifier));
+};
+const isUnshadowedGlobalRequireIdentifier = (identifier, analysis) => identifier.text === "require" && !hasTopLevelValueBinding(analysis.sourceFile, identifier.text) && getImportBinding(analysis.sourceFile, identifier.text) === null;
+const isNodeRequireResolverIdentifier = (identifier, analysis) => {
+	if (analysis.localBindings.has(identifier.text)) return false;
+	const scopedBinding = getScopedConfigBinding(identifier);
+	const resolverInitializer = scopedBinding.wasFound ? scopedBinding.initializer : getTopLevelBinding(analysis.sourceFile, identifier.text);
+	if (!scopedBinding.wasFound && resolverInitializer === null) return isUnshadowedGlobalRequireIdentifier(identifier, analysis);
+	return Boolean(resolverInitializer && isConstantVariableInitializer(resolverInitializer) && isNodeCreateRequireCall(resolverInitializer, analysis));
+};
+const getNodeRequireResolveModuleSpecifier = (callExpression, analysis) => {
+	const [moduleSpecifierNode] = callExpression.arguments;
+	if (!moduleSpecifierNode || !typescriptBinding.isStringLiteralLike(moduleSpecifierNode)) return null;
+	const target = callExpression.expression;
+	if (!typescriptBinding.isPropertyAccessExpression(target) && !typescriptBinding.isElementAccessExpression(target)) return null;
+	if (getAccessedPropertyName(target) !== "resolve") return null;
+	if (isNodeCreateRequireCall(target.expression, analysis)) return moduleSpecifierNode.text;
+	if (!typescriptBinding.isIdentifier(target.expression)) return null;
+	return isNodeRequireResolverIdentifier(target.expression, analysis) ? moduleSpecifierNode.text : null;
+};
+const getAssignedPropertyInitializer = (identifier, propertyName) => {
+	let bindingScope = null;
+	let currentNode = identifier;
+	while (currentNode) {
+		if (typescriptBinding.isBlock(currentNode) || typescriptBinding.isSourceFile(currentNode)) {
+			const statementScope = currentNode;
+			const hasBinding = statementScope.statements.some((statement) => {
+				if (typescriptBinding.isVariableStatement(statement)) return statement.declarationList.declarations.some((declaration) => bindingNameContainsIdentifier(declaration.name, identifier.text));
+				if ((typescriptBinding.isFunctionDeclaration(statement) || typescriptBinding.isClassDeclaration(statement)) && statement.name?.text === identifier.text) return true;
+				if (!typescriptBinding.isSourceFile(statementScope) || !typescriptBinding.isImportDeclaration(statement)) return false;
+				const importClause = statement.importClause;
+				if (importClause?.name?.text === identifier.text) return true;
+				const namedBindings = importClause?.namedBindings;
+				return namedBindings ? typescriptBinding.isNamespaceImport(namedBindings) ? namedBindings.name.text === identifier.text : namedBindings.elements.some((element) => element.name.text === identifier.text) : false;
+			});
+			const isFunctionParameter = typescriptBinding.isBlock(currentNode) && typescriptBinding.isFunctionLike(currentNode.parent) && currentNode.parent.parameters.some((parameter) => typescriptBinding.isIdentifier(parameter.name) && parameter.name.text === identifier.text);
+			if (hasBinding || isFunctionParameter) {
+				bindingScope = currentNode;
+				break;
+			}
+		}
+		currentNode = currentNode.parent;
+	}
+	if (!bindingScope) bindingScope = identifier.getSourceFile();
+	let assignedInitializer = null;
+	let wasFound = false;
+	for (const statement of bindingScope.statements) {
+		if (statement.end > identifier.pos) break;
+		if (!typescriptBinding.isExpressionStatement(statement) || !typescriptBinding.isBinaryExpression(statement.expression) || statement.expression.operatorToken.kind !== typescriptBinding.SyntaxKind.EqualsToken) continue;
+		const { left } = statement.expression;
+		const assignedObject = typescriptBinding.isPropertyAccessExpression(left) || typescriptBinding.isElementAccessExpression(left) ? left.expression : null;
+		const assignedPropertyName = typescriptBinding.isPropertyAccessExpression(left) ? left.name.text : typescriptBinding.isElementAccessExpression(left) && left.argumentExpression && typescriptBinding.isStringLiteralLike(left.argumentExpression) ? left.argumentExpression.text : null;
+		if (assignedObject && typescriptBinding.isIdentifier(assignedObject) && assignedObject.text === identifier.text && assignedPropertyName === propertyName) {
+			wasFound = true;
+			assignedInitializer = statement.expression.right;
+		}
+	}
+	return {
+		wasFound,
+		initializer: assignedInitializer
+	};
+};
+const getStaticConfigValueState = (expression, analysis, visitedExpressions = /* @__PURE__ */ new Set()) => {
+	const unwrappedExpression = unwrapTypescriptExpression(expression);
+	if (visitedExpressions.has(unwrappedExpression)) return null;
+	const nextVisitedExpressions = new Set(visitedExpressions);
+	nextVisitedExpressions.add(unwrappedExpression);
+	if (unwrappedExpression.kind === typescriptBinding.SyntaxKind.NullKeyword || typescriptBinding.isIdentifier(unwrappedExpression) && unwrappedExpression.text === "undefined") return {
+		isNullish: true,
+		isTruthy: false
+	};
+	if (unwrappedExpression.kind === typescriptBinding.SyntaxKind.FalseKeyword || typescriptBinding.isStringLiteralLike(unwrappedExpression) && unwrappedExpression.text.length === 0 || typescriptBinding.isNumericLiteral(unwrappedExpression) && Number(unwrappedExpression.text) === 0) return {
+		isNullish: false,
+		isTruthy: false
+	};
+	if (unwrappedExpression.kind === typescriptBinding.SyntaxKind.TrueKeyword || typescriptBinding.isStringLiteralLike(unwrappedExpression) && unwrappedExpression.text.length > 0 || typescriptBinding.isNumericLiteral(unwrappedExpression) && Number(unwrappedExpression.text) !== 0 || typescriptBinding.isObjectLiteralExpression(unwrappedExpression) || typescriptBinding.isArrayLiteralExpression(unwrappedExpression) || typescriptBinding.isArrowFunction(unwrappedExpression) || typescriptBinding.isFunctionExpression(unwrappedExpression)) return {
+		isNullish: false,
+		isTruthy: true
+	};
+	if (typescriptBinding.isIdentifier(unwrappedExpression)) {
+		if (analysis.localBindings.has(unwrappedExpression.text)) {
+			const localReference = analysis.localBindings.get(unwrappedExpression.text);
+			return localReference?.expression ? getStaticConfigValueState(localReference.expression, localReference.analysis, nextVisitedExpressions) : null;
+		}
+		const topLevelBinding = getTopLevelBinding(analysis.sourceFile, unwrappedExpression.text);
+		return topLevelBinding && typescriptBinding.isExpression(topLevelBinding) ? getStaticConfigValueState(topLevelBinding, analysis, nextVisitedExpressions) : null;
+	}
+	if (typescriptBinding.isConditionalExpression(unwrappedExpression)) {
+		const conditionState = getStaticConfigValueState(unwrappedExpression.condition, analysis, nextVisitedExpressions);
+		if (conditionState !== null) return getStaticConfigValueState(conditionState.isTruthy ? unwrappedExpression.whenTrue : unwrappedExpression.whenFalse, analysis, nextVisitedExpressions);
+		const whenTrueState = getStaticConfigValueState(unwrappedExpression.whenTrue, analysis, nextVisitedExpressions);
+		const whenFalseState = getStaticConfigValueState(unwrappedExpression.whenFalse, analysis, nextVisitedExpressions);
+		return whenTrueState !== null && whenFalseState !== null && whenTrueState.isNullish === whenFalseState.isNullish && whenTrueState.isTruthy === whenFalseState.isTruthy ? whenTrueState : null;
+	}
+	if (typescriptBinding.isBinaryExpression(unwrappedExpression)) {
+		const leftState = getStaticConfigValueState(unwrappedExpression.left, analysis, nextVisitedExpressions);
+		if (unwrappedExpression.operatorToken.kind === typescriptBinding.SyntaxKind.AmpersandAmpersandToken) {
+			if (leftState === null) return null;
+			return leftState.isTruthy ? getStaticConfigValueState(unwrappedExpression.right, analysis, nextVisitedExpressions) : leftState;
+		}
+		if (unwrappedExpression.operatorToken.kind === typescriptBinding.SyntaxKind.BarBarToken) {
+			if (leftState === null) return null;
+			return leftState.isTruthy ? leftState : getStaticConfigValueState(unwrappedExpression.right, analysis, nextVisitedExpressions);
+		}
+		if (unwrappedExpression.operatorToken.kind === typescriptBinding.SyntaxKind.QuestionQuestionToken) {
+			if (leftState === null) return null;
+			return leftState.isNullish ? getStaticConfigValueState(unwrappedExpression.right, analysis, nextVisitedExpressions) : leftState;
+		}
+	}
+	return null;
+};
+const isStaticallyDisabledConfigExpression = (expression, analysis) => getStaticConfigValueState(expression, analysis)?.isTruthy === false;
+const isStaticallyTruthyConfigExpression = (expression, analysis) => getStaticConfigValueState(expression, analysis)?.isTruthy === true;
+const isStaticallyNullishConfigExpression = (expression, analysis) => getStaticConfigValueState(expression, analysis)?.isNullish === true;
+const isStaticallyNonNullishConfigExpression = (expression, analysis) => getStaticConfigValueState(expression, analysis)?.isNullish === false;
+const getReactCompilerFlagState = (expression, analysis, visitedExpressions = /* @__PURE__ */ new Set()) => {
+	const unwrappedExpression = unwrapTypescriptExpression(expression);
+	if (visitedExpressions.has(unwrappedExpression)) return null;
+	const nextVisitedExpressions = new Set(visitedExpressions);
+	nextVisitedExpressions.add(unwrappedExpression);
+	if (typescriptBinding.isIdentifier(unwrappedExpression)) {
+		const assignedBinding = getAssignedPropertyInitializer(unwrappedExpression, "reactCompiler");
+		if (assignedBinding.wasFound && assignedBinding.initializer) return { isEnabled: !isStaticallyDisabledConfigExpression(assignedBinding.initializer, analysis) };
+		if (analysis.localBindings.has(unwrappedExpression.text)) {
+			const localReference = analysis.localBindings.get(unwrappedExpression.text);
+			return localReference?.expression ? getReactCompilerFlagState(localReference.expression, localReference.analysis, nextVisitedExpressions) : null;
+		}
+		const topLevelBinding = getTopLevelBinding(analysis.sourceFile, unwrappedExpression.text);
+		return topLevelBinding && typescriptBinding.isExpression(topLevelBinding) ? getReactCompilerFlagState(topLevelBinding, analysis, nextVisitedExpressions) : null;
+	}
+	if (!typescriptBinding.isObjectLiteralExpression(unwrappedExpression)) return null;
+	for (const property of [...unwrappedExpression.properties].reverse()) {
+		if (typescriptBinding.isPropertyAssignment(property) && getStaticPropertyName(property.name) === "reactCompiler") return { isEnabled: !isStaticallyDisabledConfigExpression(property.initializer, analysis) };
+		if (typescriptBinding.isShorthandPropertyAssignment(property) && property.name.text === "reactCompiler") return { isEnabled: !isStaticallyDisabledConfigExpression(property.name, analysis) };
+		if (typescriptBinding.isSpreadAssignment(property)) {
+			const spreadState = getReactCompilerFlagState(property.expression, analysis, nextVisitedExpressions);
+			if (spreadState) return spreadState;
+		}
+	}
+	return null;
+};
+const getSelectedIdentifierObjectProperty = (identifier, propertyName, analysis, visitedExpressions) => {
+	if (analysis.localBindings.has(identifier.text)) {
+		const localReference = analysis.localBindings.get(identifier.text);
+		return localReference?.expression ? getSelectedObjectProperty(localReference.expression, propertyName, localReference.analysis, visitedExpressions) : null;
+	}
+	const scopedBinding = getScopedConfigBinding(identifier);
+	if (scopedBinding.wasFound) return scopedBinding.initializer ? getSelectedObjectProperty(scopedBinding.initializer, propertyName, analysis, visitedExpressions) : null;
+	const topLevelBinding = getTopLevelBinding(analysis.sourceFile, identifier.text);
+	return topLevelBinding && typescriptBinding.isExpression(topLevelBinding) ? getSelectedObjectProperty(topLevelBinding, propertyName, analysis, visitedExpressions) : null;
+};
+const getDirectObjectPropertyReference = (property, propertyName, analysis) => {
+	if (typescriptBinding.isPropertyAssignment(property) && getStaticPropertyName(property.name) === propertyName) return {
+		node: property.initializer,
+		analysis
+	};
+	if (typescriptBinding.isMethodDeclaration(property) && getStaticPropertyName(property.name) === propertyName) return {
+		node: property,
+		analysis
+	};
+	if (typescriptBinding.isShorthandPropertyAssignment(property) && property.name.text === propertyName) return {
+		node: property.name,
+		analysis
+	};
+	return null;
+};
+const getSelectedObjectLiteralProperty = (objectLiteral, propertyName, analysis, visitedExpressions) => {
+	for (const property of [...objectLiteral.properties].reverse()) {
+		const directProperty = getDirectObjectPropertyReference(property, propertyName, analysis);
+		if (directProperty) return directProperty;
+		if (!typescriptBinding.isSpreadAssignment(property)) continue;
+		const spreadProperty = getSelectedObjectProperty(property.expression, propertyName, analysis, visitedExpressions);
+		if (spreadProperty) return spreadProperty;
+	}
+	return null;
+};
+const getSelectedObjectProperty = (expression, propertyName, analysis, visitedExpressions = /* @__PURE__ */ new Set()) => {
+	const resolvedExpression = unwrapTypescriptExpression(expression);
+	if (visitedExpressions.has(resolvedExpression)) return null;
+	visitedExpressions.add(resolvedExpression);
+	if (typescriptBinding.isIdentifier(resolvedExpression)) return getSelectedIdentifierObjectProperty(resolvedExpression, propertyName, analysis, visitedExpressions);
+	return typescriptBinding.isObjectLiteralExpression(resolvedExpression) ? getSelectedObjectLiteralProperty(resolvedExpression, propertyName, analysis, visitedExpressions) : null;
+};
+const configExpressionMayDefineProperty = (expression, propertyName, analysis, visitedExpressions = /* @__PURE__ */ new Set()) => {
+	const resolvedExpression = unwrapTypescriptExpression(expression);
+	if (visitedExpressions.has(resolvedExpression)) return true;
+	const nextVisitedExpressions = new Set(visitedExpressions);
+	nextVisitedExpressions.add(resolvedExpression);
+	if (typescriptBinding.isIdentifier(resolvedExpression)) {
+		if (analysis.localBindings.has(resolvedExpression.text)) {
+			const localReference = analysis.localBindings.get(resolvedExpression.text);
+			return localReference?.expression ? configExpressionMayDefineProperty(localReference.expression, propertyName, localReference.analysis, nextVisitedExpressions) : true;
+		}
+		const scopedBinding = getScopedConfigBinding(resolvedExpression);
+		if (scopedBinding.wasFound) return scopedBinding.initializer ? configExpressionMayDefineProperty(scopedBinding.initializer, propertyName, analysis, nextVisitedExpressions) : true;
+		const topLevelBinding = getTopLevelBinding(analysis.sourceFile, resolvedExpression.text);
+		return topLevelBinding && typescriptBinding.isExpression(topLevelBinding) ? configExpressionMayDefineProperty(topLevelBinding, propertyName, analysis, nextVisitedExpressions) : true;
+	}
+	if (typescriptBinding.isConditionalExpression(resolvedExpression)) {
+		if (isStaticallyTruthyConfigExpression(resolvedExpression.condition, analysis)) return configExpressionMayDefineProperty(resolvedExpression.whenTrue, propertyName, analysis, nextVisitedExpressions);
+		if (isStaticallyDisabledConfigExpression(resolvedExpression.condition, analysis)) return configExpressionMayDefineProperty(resolvedExpression.whenFalse, propertyName, analysis, nextVisitedExpressions);
+		return configExpressionMayDefineProperty(resolvedExpression.whenTrue, propertyName, analysis, nextVisitedExpressions) || configExpressionMayDefineProperty(resolvedExpression.whenFalse, propertyName, analysis, nextVisitedExpressions);
+	}
+	if (!typescriptBinding.isObjectLiteralExpression(resolvedExpression)) return true;
+	return resolvedExpression.properties.some((property) => {
+		if (typescriptBinding.isSpreadAssignment(property)) return configExpressionMayDefineProperty(property.expression, propertyName, analysis, nextVisitedExpressions);
+		if (typescriptBinding.isPropertyAssignment(property) || typescriptBinding.isShorthandPropertyAssignment(property) || typescriptBinding.isMethodDeclaration(property) || typescriptBinding.isGetAccessorDeclaration(property) || typescriptBinding.isSetAccessorDeclaration(property)) {
+			const staticPropertyName = getStaticPropertyName(property.name);
+			return staticPropertyName === null || staticPropertyName === propertyName;
+		}
+		return false;
+	});
+};
+const getNamedObjectLiteralExportNode = (objectLiteral, exportName) => {
+	for (const property of [...objectLiteral.properties].reverse()) {
+		if (typescriptBinding.isPropertyAssignment(property) && getStaticPropertyName(property.name) === exportName) return property.initializer;
+		if (typescriptBinding.isShorthandPropertyAssignment(property) && property.name.text === exportName) return property.name;
+	}
+	return null;
+};
+const getCommonJsRootConfigExportMatch = (assignment, sourceFile, exportName) => {
+	if (!isCommonJsConfigExportAssignment(assignment, sourceFile)) return null;
+	if (exportName === "default") return {
+		node: assignment.right,
+		strategy: "replace-mutation"
+	};
+	if (!typescriptBinding.isObjectLiteralExpression(assignment.right)) return null;
+	const exportedNode = getNamedObjectLiteralExportNode(assignment.right, exportName);
+	return exportedNode ? {
+		node: exportedNode,
+		strategy: "source-order"
+	} : null;
+};
+const getCommonJsPropertyConfigExportMatch = (assignment, sourceFile, exportName) => {
+	if (assignment.left.getText(sourceFile) === `exports.${exportName}`) return {
+		node: assignment.right,
+		strategy: "source-order"
+	};
+	if (exportName !== "default" || !typescriptBinding.isPropertyAccessExpression(assignment.left) && !typescriptBinding.isElementAccessExpression(assignment.left)) return null;
+	const assignmentObjectText = assignment.left.expression.getText(sourceFile);
+	if (!getAccessedPropertyName(assignment.left) || assignmentObjectText !== "module.exports" && assignmentObjectText !== "exports" && assignmentObjectText !== "exports.default") return null;
+	return {
+		node: assignment,
+		strategy: "append-mutation"
+	};
+};
+const getCommonJsConfigExportMatch = (statement, sourceFile, exportName) => {
+	if (!typescriptBinding.isExpressionStatement(statement) || !typescriptBinding.isBinaryExpression(statement.expression) || statement.expression.operatorToken.kind !== typescriptBinding.SyntaxKind.EqualsToken) return null;
+	return getCommonJsRootConfigExportMatch(statement.expression, sourceFile, exportName) ?? getCommonJsPropertyConfigExportMatch(statement.expression, sourceFile, exportName);
+};
+const getExportedVariableInitializerNodes = (statement, exportName) => {
+	if (!typescriptBinding.isVariableStatement(statement) || !hasExportModifier(statement)) return [];
+	const exportedNodes = [];
+	for (const declaration of statement.declarationList.declarations) if (typescriptBinding.isIdentifier(declaration.name) && declaration.name.text === exportName && declaration.initializer) exportedNodes.push(declaration.initializer);
+	return exportedNodes;
+};
+const getLocalNamedExportNodes = (statement, exportName) => {
+	if (!typescriptBinding.isExportDeclaration(statement) || statement.moduleSpecifier || !statement.exportClause || !typescriptBinding.isNamedExports(statement.exportClause)) return [];
+	const exportedNodes = [];
+	for (const exportSpecifier of statement.exportClause.elements) if (exportSpecifier.name.text === exportName) exportedNodes.push(exportSpecifier.propertyName ?? exportSpecifier.name);
+	return exportedNodes;
+};
+const getDefaultEsmConfigExportNodes = (statement, exportName) => {
+	if (exportName !== "default") return [];
+	if (typescriptBinding.isExportAssignment(statement)) return [statement.expression];
+	if (!typescriptBinding.isFunctionDeclaration(statement) && !typescriptBinding.isClassDeclaration(statement)) return [];
+	if (!hasExportModifier(statement)) return [];
+	return typescriptBinding.getModifiers(statement)?.some((modifier) => modifier.kind === typescriptBinding.SyntaxKind.DefaultKeyword) ? [statement] : [];
+};
+const getEsmConfigExportNodes = (statement, exportName) => {
+	const exportedNodes = getDefaultEsmConfigExportNodes(statement, exportName);
+	exportedNodes.push(...getExportedVariableInitializerNodes(statement, exportName));
+	if (typescriptBinding.isFunctionDeclaration(statement) && hasExportModifier(statement) && statement.name?.text === exportName) exportedNodes.push(statement);
+	exportedNodes.push(...getLocalNamedExportNodes(statement, exportName));
+	return exportedNodes;
+};
+const getExportedConfigNodes = (sourceFile, exportName) => {
+	if ((sourceFile.fileName.endsWith(".json") || path$1.basename(sourceFile.fileName) === ".babelrc") && exportName === "default") return sourceFile.statements.flatMap((statement) => typescriptBinding.isExpressionStatement(statement) ? [statement.expression] : []);
+	const exportedNodes = [];
+	const commonJsExportedNodes = [];
+	for (const statement of sourceFile.statements) {
+		exportedNodes.push(...getEsmConfigExportNodes(statement, exportName));
+		const commonJsExportMatch = getCommonJsConfigExportMatch(statement, sourceFile, exportName);
+		if (!commonJsExportMatch) continue;
+		if (commonJsExportMatch.strategy === "source-order") {
+			exportedNodes.push(commonJsExportMatch.node);
+			continue;
+		}
+		if (commonJsExportMatch.strategy === "replace-mutation") commonJsExportedNodes.length = 0;
+		commonJsExportedNodes.push(commonJsExportMatch.node);
+	}
+	return [...exportedNodes, ...commonJsExportedNodes];
+};
+const getReExportedConfigModules = (sourceFile, exportName) => {
+	const bindings = [];
+	for (const statement of sourceFile.statements) {
+		if (!typescriptBinding.isExportDeclaration(statement) || statement.isTypeOnly || !statement.moduleSpecifier || !typescriptBinding.isStringLiteralLike(statement.moduleSpecifier)) continue;
+		if (!statement.exportClause && exportName !== "default") {
+			bindings.push({
+				moduleSpecifier: statement.moduleSpecifier.text,
+				exportName,
+				isNamespace: true
+			});
+			continue;
+		}
+		if (!statement.exportClause || !typescriptBinding.isNamedExports(statement.exportClause)) continue;
+		for (const exportSpecifier of statement.exportClause.elements) if (exportSpecifier.name.text === exportName) bindings.push({
+			moduleSpecifier: statement.moduleSpecifier.text,
+			exportName: (exportSpecifier.propertyName ?? exportSpecifier.name).text,
+			isNamespace: false
+		});
+	}
+	return bindings;
+};
+const analyzeConfigModuleExport = (filePath, exportName, allowCompilerTransform, importDepth, visitedModules, argumentsList = [], argumentAnalysis) => {
+	if (!isFile(filePath) || importDepth > 4) return false;
+	const moduleVisitKey = `${filePath}:${exportName}:${allowCompilerTransform}`;
+	if (visitedModules.has(moduleVisitKey)) return false;
+	const nextVisitedModules = new Set(visitedModules);
+	nextVisitedModules.add(moduleVisitKey);
+	let sourceText;
+	try {
+		sourceText = fs$1.readFileSync(filePath, "utf-8");
+	} catch {
+		return false;
+	}
+	return analyzeConfigSourceFileExport(parseConfigSourceFile(filePath, sourceText), filePath, exportName, allowCompilerTransform, importDepth, nextVisitedModules, argumentsList, argumentAnalysis);
+};
+const analyzeConfigSourceFileExport = (sourceFile, filePath, exportName, allowCompilerTransform, importDepth, visitedModules, argumentsList = [], argumentAnalysis) => {
+	const analysis = {
+		filePath,
+		sourceFile,
+		importDepth,
+		visitedModules,
+		visitedNodes: /* @__PURE__ */ new Set(),
+		localBindings: /* @__PURE__ */ new Map(),
+		activeFunctions: /* @__PURE__ */ new Set()
+	};
+	const resolvedArgumentAnalysis = argumentAnalysis ?? analysis;
+	const exportedConfigNodes = getExportedConfigNodes(sourceFile, exportName);
+	return exportedConfigNodes.some((node) => {
+		if (typescriptBinding.isArrowFunction(node) || typescriptBinding.isFunctionExpression(node) || typescriptBinding.isFunctionDeclaration(node)) return analyzeConfigFunction(node, analysis, allowCompilerTransform, argumentsList, resolvedArgumentAnalysis);
+		if (argumentsList.length > 0 && typescriptBinding.isIdentifier(node)) {
+			const topLevelBinding = getTopLevelBinding(sourceFile, node.text);
+			if (topLevelBinding && typescriptBinding.isFunctionLike(topLevelBinding)) return analyzeConfigFunction(topLevelBinding, analysis, allowCompilerTransform, argumentsList, resolvedArgumentAnalysis);
+			const importBinding = getImportBinding(sourceFile, node.text);
+			if (importBinding) {
+				const importedFilePath = resolveImportedConfigFile(filePath, importBinding.moduleSpecifier);
+				return Boolean(importedFilePath && analyzeConfigModuleExport(importedFilePath, importBinding.exportName, allowCompilerTransform, importDepth + 1, visitedModules, argumentsList, resolvedArgumentAnalysis));
+			}
+		}
+		return analyzeConfigNode(node, analysis, allowCompilerTransform);
+	}) || getReExportedConfigModules(sourceFile, exportName).some((binding) => {
+		if (exportedConfigNodes.length > 0 && binding.isNamespace) return false;
+		const importedFilePath = resolveImportedConfigFile(filePath, binding.moduleSpecifier);
+		return Boolean(importedFilePath && analyzeConfigModuleExport(importedFilePath, binding.exportName, allowCompilerTransform, importDepth + 1, visitedModules, argumentsList, resolvedArgumentAnalysis));
+	});
+};
+const analyzeConfigFunction = (functionNode, analysis, allowCompilerTransform, argumentsList = [], argumentAnalysis = analysis) => {
+	if (!functionNode.body) return false;
+	if (analysis.activeFunctions.has(functionNode.pos)) return false;
+	const activeFunctions = new Set(analysis.activeFunctions);
+	activeFunctions.add(functionNode.pos);
+	const functionAnalysis = {
+		...analysis,
+		visitedNodes: /* @__PURE__ */ new Set(),
+		localBindings: getFunctionLocalBindings(functionNode, argumentsList, argumentAnalysis, analysis),
+		activeFunctions
+	};
+	if (!typescriptBinding.isBlock(functionNode.body)) return analyzeConfigNode(functionNode.body, functionAnalysis, allowCompilerTransform);
+	let hasCompiler = false;
+	const visitReturns = (node) => {
+		if (hasCompiler || node !== functionNode.body && typescriptBinding.isFunctionLike(node)) return;
+		if (typescriptBinding.isReturnStatement(node) && node.expression) {
+			hasCompiler = analyzeConfigNode(node.expression, functionAnalysis, allowCompilerTransform);
+			return;
+		}
+		typescriptBinding.forEachChild(node, visitReturns);
+	};
+	visitReturns(functionNode.body);
+	return hasCompiler;
+};
+const analyzeImportedConfig = ({ analysis, moduleSpecifier, exportName, allowCompilerTransform, argumentsList }) => {
+	const importedFilePath = resolveImportedConfigFile(analysis.filePath, moduleSpecifier);
+	if (!importedFilePath) return null;
+	return analyzeConfigModuleExport(importedFilePath, exportName, allowCompilerTransform, analysis.importDepth + 1, analysis.visitedModules, argumentsList, analysis);
+};
+const analyzeConfigIdentifier = (identifier, analysis, allowCompilerTransform, isCompilerTransformCollection, excludedPropertyNames) => {
+	const assignedReactCompiler = getAssignedPropertyInitializer(identifier, "reactCompiler");
+	if (assignedReactCompiler.initializer && !isStaticallyDisabledConfigExpression(assignedReactCompiler.initializer, analysis)) return true;
+	const assignedPlugins = getAssignedPropertyInitializer(identifier, "plugins");
+	if (assignedPlugins.initializer && analyzeConfigNode(assignedPlugins.initializer, analysis, true, true)) return true;
+	const assignedPresets = getAssignedPropertyInitializer(identifier, "presets");
+	if (assignedPresets.initializer && analyzeConfigNode(assignedPresets.initializer, analysis, true, true)) return true;
+	const overriddenPropertyNames = new Set(excludedPropertyNames);
+	if (assignedReactCompiler.wasFound) overriddenPropertyNames.add("reactCompiler");
+	if (assignedPlugins.wasFound) overriddenPropertyNames.add("plugins");
+	if (assignedPresets.wasFound) overriddenPropertyNames.add("presets");
+	if (analysis.localBindings.has(identifier.text)) {
+		const localReference = analysis.localBindings.get(identifier.text);
+		return Boolean(localReference?.expression && analyzeConfigNode(localReference.expression, localReference.analysis, allowCompilerTransform, isCompilerTransformCollection, overriddenPropertyNames));
+	}
+	const scopedBinding = getScopedConfigBinding(identifier);
+	if (scopedBinding.wasFound) return Boolean(scopedBinding.initializer && analyzeConfigNode(scopedBinding.initializer, analysis, allowCompilerTransform, isCompilerTransformCollection, overriddenPropertyNames));
+	const importBinding = getImportBinding(analysis.sourceFile, identifier.text);
+	if (importBinding) {
+		if (allowCompilerTransform && isCompilerTransformModule(importBinding.moduleSpecifier, importBinding.exportName)) return true;
+		return Boolean(analyzeImportedConfig({
+			analysis,
+			moduleSpecifier: importBinding.moduleSpecifier,
+			exportName: importBinding.exportName,
+			allowCompilerTransform
+		}));
+	}
+	const topLevelBinding = getTopLevelBinding(analysis.sourceFile, identifier.text);
+	return Boolean(topLevelBinding && analyzeConfigNode(topLevelBinding, analysis, allowCompilerTransform, isCompilerTransformCollection, overriddenPropertyNames));
+};
+const hasReactCompilerConfigInSentryWrapperArgument = (callExpression, analysis, moduleSpecifier, exportName) => {
+	if (moduleSpecifier !== "@sentry/nextjs" || exportName !== "withSentryConfig") return false;
+	const [configArgument] = callExpression.arguments;
+	return Boolean(configArgument && analyzeConfigNode(configArgument, analysis, false));
+};
+const hasEnabledCompilerOptionInVitePluginArgument = (callExpression, analysis, moduleSpecifier, exportName) => {
+	if (moduleSpecifier !== "@vitejs/plugin-react" || exportName !== "default") return false;
+	const [optionsArgument] = callExpression.arguments;
+	if (!optionsArgument) return false;
+	const compilerProperty = getSelectedObjectProperty(optionsArgument, "compiler", analysis);
+	if (compilerProperty === null) return false;
+	return !typescriptBinding.isExpression(compilerProperty.node) || !isStaticallyDisabledConfigExpression(compilerProperty.node, compilerProperty.analysis);
+};
+const hasReactCompilerConfigInCallArguments = (callExpression, analysis, moduleSpecifier, exportName) => hasReactCompilerConfigInSentryWrapperArgument(callExpression, analysis, moduleSpecifier, exportName) || hasEnabledCompilerOptionInVitePluginArgument(callExpression, analysis, moduleSpecifier, exportName);
+const analyzeConfigCallTarget = (callExpression, analysis, allowCompilerTransform) => {
+	const target = callExpression.expression;
+	const callableRequiredModuleSpecifier = getRequireModuleSpecifier(target);
+	if (callableRequiredModuleSpecifier !== null) {
+		if (typescriptBinding.isCallExpression(target) && typescriptBinding.isIdentifier(target.expression) && (analysis.localBindings.has(target.expression.text) || getScopedConfigBinding(target.expression).wasFound || hasTopLevelValueBinding(analysis.sourceFile, "require"))) return false;
+		if (allowCompilerTransform && isCompilerTransformModule(callableRequiredModuleSpecifier, "default")) return true;
+		if (hasReactCompilerConfigInCallArguments(callExpression, analysis, callableRequiredModuleSpecifier, "default")) return true;
+		const hasCompilerTransform = analyzeImportedConfig({
+			analysis,
+			moduleSpecifier: callableRequiredModuleSpecifier,
+			exportName: "default",
+			allowCompilerTransform,
+			argumentsList: callExpression.arguments
+		});
+		if (isLocalModuleSpecifier(callableRequiredModuleSpecifier) || hasCompilerTransform !== null) return Boolean(hasCompilerTransform);
+		return null;
+	}
+	if (!typescriptBinding.isPropertyAccessExpression(target) && !typescriptBinding.isElementAccessExpression(target)) return null;
+	const propertyName = getAccessedPropertyName(target);
+	if (propertyName === null) return null;
+	const requiredModuleSpecifier = getRequireModuleSpecifier(target.expression);
+	if (requiredModuleSpecifier !== null) {
+		if (typescriptBinding.isCallExpression(target.expression) && typescriptBinding.isIdentifier(target.expression.expression) && (analysis.localBindings.has(target.expression.expression.text) || getScopedConfigBinding(target.expression.expression).wasFound || hasTopLevelValueBinding(analysis.sourceFile, "require"))) return false;
+		if (allowCompilerTransform && isCompilerTransformModule(requiredModuleSpecifier, propertyName)) return true;
+		if (hasReactCompilerConfigInCallArguments(callExpression, analysis, requiredModuleSpecifier, propertyName)) return true;
+		const hasCompilerTransform = analyzeImportedConfig({
+			analysis,
+			moduleSpecifier: requiredModuleSpecifier,
+			exportName: propertyName,
+			allowCompilerTransform,
+			argumentsList: callExpression.arguments
+		});
+		if (isLocalModuleSpecifier(requiredModuleSpecifier) || hasCompilerTransform !== null) return Boolean(hasCompilerTransform);
+		return null;
+	}
+	if (!typescriptBinding.isIdentifier(target.expression)) return null;
+	const importBinding = analysis.localBindings.has(target.expression.text) || getScopedConfigBinding(target.expression).wasFound ? null : getImportBinding(analysis.sourceFile, target.expression.text);
+	if (importBinding?.isNamespace) {
+		if (allowCompilerTransform && isCompilerTransformModule(importBinding.moduleSpecifier, propertyName)) return true;
+		if (hasReactCompilerConfigInCallArguments(callExpression, analysis, importBinding.moduleSpecifier, propertyName)) return true;
+		const hasCompilerTransform = analyzeImportedConfig({
+			analysis,
+			moduleSpecifier: importBinding.moduleSpecifier,
+			exportName: propertyName,
+			allowCompilerTransform,
+			argumentsList: callExpression.arguments
+		});
+		if (isLocalModuleSpecifier(importBinding.moduleSpecifier) || hasCompilerTransform !== null) return Boolean(hasCompilerTransform);
+		return null;
+	}
+	const selectedProperty = getSelectedObjectProperty(target.expression, propertyName, analysis);
+	if (selectedProperty === null) return null;
+	return typescriptBinding.isFunctionLike(selectedProperty.node) ? analyzeConfigFunction(selectedProperty.node, selectedProperty.analysis, allowCompilerTransform, callExpression.arguments, analysis) : analyzeConfigNode(selectedProperty.node, selectedProperty.analysis, allowCompilerTransform);
+};
+const analyzeConfigMemberAccess = (expression, propertyName, analysis, allowCompilerTransform) => {
+	if (!typescriptBinding.isIdentifier(expression)) return analyzeConfigNode(expression, analysis, allowCompilerTransform);
+	if (analysis.localBindings.has(expression.text) || getScopedConfigBinding(expression).wasFound) {
+		const selectedProperty = getSelectedObjectProperty(expression, propertyName, analysis);
+		return Boolean(selectedProperty && analyzeConfigNode(selectedProperty.node, selectedProperty.analysis, allowCompilerTransform));
+	}
+	const importBinding = getImportBinding(analysis.sourceFile, expression.text);
+	if (importBinding?.isNamespace) {
+		if (allowCompilerTransform && isCompilerTransformModule(importBinding.moduleSpecifier, propertyName)) return true;
+		return Boolean(analyzeImportedConfig({
+			analysis,
+			moduleSpecifier: importBinding.moduleSpecifier,
+			exportName: propertyName,
+			allowCompilerTransform
+		}));
+	}
+	const selectedProperty = getSelectedObjectProperty(expression, propertyName, analysis);
+	return Boolean(selectedProperty && analyzeConfigNode(selectedProperty.node, selectedProperty.analysis, allowCompilerTransform));
+};
+const analyzeConfigNode = (node, analysis, allowCompilerTransform, isCompilerTransformCollection = false, excludedPropertyNames) => {
+	const excludedPropertiesVisitKey = excludedPropertyNames ? [...excludedPropertyNames].sort().join(",") : "";
+	const nodeVisitKey = `${node.pos}:${node.end}:${allowCompilerTransform}:${isCompilerTransformCollection}:${excludedPropertiesVisitKey}`;
+	if (analysis.visitedNodes.has(nodeVisitKey)) return false;
+	analysis.visitedNodes.add(nodeVisitKey);
+	if (typescriptBinding.isIdentifier(node)) return analyzeConfigIdentifier(node, analysis, allowCompilerTransform, isCompilerTransformCollection, excludedPropertyNames);
+	if (typescriptBinding.isStringLiteralLike(node)) return allowCompilerTransform && (node.text === "babel-plugin-react-compiler" || node.text === "react-compiler");
+	if (isTransparentConfigExpression(node)) return analyzeConfigNode(node.expression, analysis, allowCompilerTransform, isCompilerTransformCollection, excludedPropertyNames);
+	if (typescriptBinding.isObjectLiteralExpression(node)) {
+		const reactCompilerFlagState = excludedPropertyNames?.has("reactCompiler") ? null : getReactCompilerFlagState(node, analysis);
+		if (reactCompilerFlagState?.isEnabled) return true;
+		for (const [propertyIndex, property] of node.properties.entries()) if (typescriptBinding.isPropertyAssignment(property)) {
+			const propertyName = getStaticPropertyName(property.name);
+			if (propertyName && excludedPropertyNames?.has(propertyName)) continue;
+			if (propertyName === "reactCompiler") continue;
+			if ((propertyName === "plugins" || propertyName === "presets") && node.properties.slice(propertyIndex + 1).some((laterProperty) => typescriptBinding.isSpreadAssignment(laterProperty) && configExpressionMayDefineProperty(laterProperty.expression, propertyName, analysis) || (typescriptBinding.isPropertyAssignment(laterProperty) || typescriptBinding.isShorthandPropertyAssignment(laterProperty)) && getStaticPropertyName(laterProperty.name) === propertyName)) continue;
+			const propertyAllowsCompilerTransform = propertyName === "plugins" || propertyName === "presets";
+			if (propertyName === "extends" && typescriptBinding.isStringLiteralLike(property.initializer)) {
+				if (analyzeImportedConfig({
+					analysis,
+					moduleSpecifier: property.initializer.text,
+					exportName: "default",
+					allowCompilerTransform: false
+				})) return true;
+			}
+			if (analyzeConfigNode(property.initializer, analysis, propertyAllowsCompilerTransform, propertyAllowsCompilerTransform)) return true;
+		} else if (typescriptBinding.isShorthandPropertyAssignment(property)) {
+			if (excludedPropertyNames?.has(property.name.text)) continue;
+			if (property.name.text === "reactCompiler") continue;
+			if ((property.name.text === "plugins" || property.name.text === "presets") && node.properties.slice(propertyIndex + 1).some((laterProperty) => typescriptBinding.isSpreadAssignment(laterProperty) && configExpressionMayDefineProperty(laterProperty.expression, property.name.text, analysis) || (typescriptBinding.isPropertyAssignment(laterProperty) || typescriptBinding.isShorthandPropertyAssignment(laterProperty)) && getStaticPropertyName(laterProperty.name) === property.name.text)) continue;
+			const propertyAllowsCompilerTransform = property.name.text === "plugins" || property.name.text === "presets";
+			if (analyzeConfigNode(property.name, analysis, propertyAllowsCompilerTransform, propertyAllowsCompilerTransform)) return true;
+		} else if (typescriptBinding.isSpreadAssignment(property)) {
+			if (reactCompilerFlagState && getReactCompilerFlagState(property.expression, analysis) !== null) continue;
+			if (node.properties.slice(propertyIndex + 1).some((laterProperty) => (typescriptBinding.isPropertyAssignment(laterProperty) || typescriptBinding.isShorthandPropertyAssignment(laterProperty)) && (getStaticPropertyName(laterProperty.name) === "plugins" || getStaticPropertyName(laterProperty.name) === "presets"))) continue;
+			if (analyzeConfigNode(property.expression, analysis, allowCompilerTransform, false, excludedPropertyNames)) return true;
+		}
+		return false;
+	}
+	if (typescriptBinding.isArrayLiteralExpression(node)) {
+		if (isCompilerTransformCollection) return node.elements.some((element) => analyzeConfigNode(typescriptBinding.isSpreadElement(element) ? element.expression : element, analysis, allowCompilerTransform, typescriptBinding.isSpreadElement(element)));
+		const isTransformTuple = allowCompilerTransform && node.elements.length > 1 && typescriptBinding.isStringLiteralLike(node.elements[0]) && node.elements[0].text !== "babel-plugin-react-compiler" && node.elements[0].text !== "react-compiler";
+		return node.elements.some((element, elementIndex) => {
+			return analyzeConfigNode(typescriptBinding.isSpreadElement(element) ? element.expression : element, analysis, allowCompilerTransform && (!isTransformTuple || elementIndex === 0));
+		});
+	}
+	if (typescriptBinding.isCallExpression(node)) {
+		const resolvedModuleSpecifier = getNodeRequireResolveModuleSpecifier(node, analysis);
+		if (resolvedModuleSpecifier !== null) return allowCompilerTransform && isCompilerTransformModule(resolvedModuleSpecifier, "default");
+		const callTargetResult = analyzeConfigCallTarget(node, analysis, allowCompilerTransform);
+		if (callTargetResult !== null) return callTargetResult;
+		const directModuleSpecifier = getRequireModuleSpecifier(node);
+		const isRequireShadowed = analysis.localBindings.has("require") || typescriptBinding.isIdentifier(node.expression) && getScopedConfigBinding(node.expression).wasFound || hasTopLevelValueBinding(analysis.sourceFile, "require");
+		if (directModuleSpecifier && isRequireShadowed) return analyzeConfigNode(node.expression, analysis, allowCompilerTransform);
+		if (directModuleSpecifier && !isRequireShadowed) {
+			if (allowCompilerTransform && isCompilerTransformModule(directModuleSpecifier, "default")) return true;
+			if (analyzeImportedConfig({
+				analysis,
+				moduleSpecifier: directModuleSpecifier,
+				exportName: "default",
+				allowCompilerTransform
+			})) return true;
+		}
+		if (typescriptBinding.isIdentifier(node.expression)) {
+			if (!analysis.localBindings.has(node.expression.text) && !getScopedConfigBinding(node.expression).wasFound) {
+				const importBinding = getImportBinding(analysis.sourceFile, node.expression.text);
+				if (importBinding) {
+					if (allowCompilerTransform && isCompilerTransformModule(importBinding.moduleSpecifier, importBinding.exportName)) return true;
+					if (hasReactCompilerConfigInCallArguments(node, analysis, importBinding.moduleSpecifier, importBinding.exportName)) return true;
+					if (allowCompilerTransform && importBinding.moduleSpecifier === "@rolldown/plugin-babel" && importBinding.exportName === "default" && node.arguments.some((argument) => analyzeConfigNode(argument, analysis, false))) return true;
+					const hasCompilerTransform = analyzeImportedConfig({
+						analysis,
+						moduleSpecifier: importBinding.moduleSpecifier,
+						exportName: importBinding.exportName,
+						allowCompilerTransform,
+						argumentsList: node.arguments
+					});
+					if (isLocalModuleSpecifier(importBinding.moduleSpecifier) || hasCompilerTransform !== null) return Boolean(hasCompilerTransform);
+				}
+			}
+			const topLevelBinding = getTopLevelBinding(analysis.sourceFile, node.expression.text);
+			if (topLevelBinding && typescriptBinding.isFunctionLike(topLevelBinding) && analyzeConfigFunction(topLevelBinding, analysis, allowCompilerTransform, node.arguments)) return true;
+		}
+		return analyzeConfigNode(node.expression, analysis, allowCompilerTransform) || node.arguments.some((argument) => analyzeConfigNode(argument, analysis, false));
+	}
+	if (typescriptBinding.isPropertyAccessExpression(node)) {
+		const requiredModuleSpecifier = getRequireModuleSpecifier(node.expression);
+		if (requiredModuleSpecifier) {
+			if (typescriptBinding.isCallExpression(node.expression) && typescriptBinding.isIdentifier(node.expression.expression) && (analysis.localBindings.has(node.expression.expression.text) || getScopedConfigBinding(node.expression.expression).wasFound || hasTopLevelValueBinding(analysis.sourceFile, "require"))) return false;
+			if (analyzeImportedConfig({
+				analysis,
+				moduleSpecifier: requiredModuleSpecifier,
+				exportName: node.name.text,
+				allowCompilerTransform
+			})) return true;
+			return allowCompilerTransform && isCompilerTransformModule(requiredModuleSpecifier, node.name.text);
+		}
+		return analyzeConfigMemberAccess(node.expression, node.name.text, analysis, allowCompilerTransform);
+	}
+	if (typescriptBinding.isElementAccessExpression(node) && node.argumentExpression && typescriptBinding.isStringLiteralLike(node.argumentExpression)) return analyzeConfigMemberAccess(node.expression, node.argumentExpression.text, analysis, allowCompilerTransform);
+	if (typescriptBinding.isBinaryExpression(node)) {
+		if (node.operatorToken.kind === typescriptBinding.SyntaxKind.AmpersandAmpersandToken) return !isStaticallyDisabledConfigExpression(node.left, analysis) && analyzeConfigNode(node.right, analysis, allowCompilerTransform, isCompilerTransformCollection);
+		if (node.operatorToken.kind === typescriptBinding.SyntaxKind.EqualsToken) {
+			const leftText = node.left.getText(analysis.sourceFile);
+			const assignedPropertyName = typescriptBinding.isPropertyAccessExpression(node.left) ? node.left.name.text : typescriptBinding.isElementAccessExpression(node.left) && node.left.argumentExpression && typescriptBinding.isStringLiteralLike(node.left.argumentExpression) ? node.left.argumentExpression.text : null;
+			if (assignedPropertyName === "reactCompiler" || leftText.endsWith(".reactCompiler")) return !isStaticallyDisabledConfigExpression(node.right, analysis);
+			if (assignedPropertyName === "plugins" || assignedPropertyName === "presets" || leftText.endsWith(".plugins") || leftText.endsWith(".presets")) return analyzeConfigNode(node.right, analysis, true, true);
+			return analyzeConfigNode(node.right, analysis, allowCompilerTransform);
+		}
+		if (node.operatorToken.kind === typescriptBinding.SyntaxKind.BarBarToken) {
+			if (isStaticallyTruthyConfigExpression(node.left, analysis)) return analyzeConfigNode(node.left, analysis, allowCompilerTransform, isCompilerTransformCollection);
+			if (isStaticallyDisabledConfigExpression(node.left, analysis)) return analyzeConfigNode(node.right, analysis, allowCompilerTransform, isCompilerTransformCollection);
+			return analyzeConfigNode(node.left, analysis, allowCompilerTransform, isCompilerTransformCollection) || analyzeConfigNode(node.right, analysis, allowCompilerTransform, isCompilerTransformCollection);
+		}
+		if (node.operatorToken.kind === typescriptBinding.SyntaxKind.QuestionQuestionToken) {
+			if (isStaticallyNullishConfigExpression(node.left, analysis)) return analyzeConfigNode(node.right, analysis, allowCompilerTransform, isCompilerTransformCollection);
+			if (isStaticallyNonNullishConfigExpression(node.left, analysis)) return analyzeConfigNode(node.left, analysis, allowCompilerTransform, isCompilerTransformCollection);
+			return analyzeConfigNode(node.left, analysis, allowCompilerTransform, isCompilerTransformCollection) || analyzeConfigNode(node.right, analysis, allowCompilerTransform, isCompilerTransformCollection);
+		}
+	}
+	if (typescriptBinding.isConditionalExpression(node)) {
+		if (isStaticallyTruthyConfigExpression(node.condition, analysis)) return analyzeConfigNode(node.whenTrue, analysis, allowCompilerTransform, isCompilerTransformCollection);
+		if (isStaticallyDisabledConfigExpression(node.condition, analysis)) return analyzeConfigNode(node.whenFalse, analysis, allowCompilerTransform, isCompilerTransformCollection);
+		return analyzeConfigNode(node.whenTrue, analysis, allowCompilerTransform, isCompilerTransformCollection) || analyzeConfigNode(node.whenFalse, analysis, allowCompilerTransform, isCompilerTransformCollection);
+	}
+	if (typescriptBinding.isArrowFunction(node) || typescriptBinding.isFunctionExpression(node) || typescriptBinding.isFunctionDeclaration(node)) return analyzeConfigFunction(node, analysis, allowCompilerTransform);
+	return false;
+};
+const hasCompilerInConfigFile = (filePath) => analyzeConfigModuleExport(filePath, "default", false, 0, /* @__PURE__ */ new Set());
+const hasCompilerInConfigFiles = (directory, filenames) => {
+	const presentEntryNames = new Set(readDirectoryEntries(directory).map((entry) => entry.name.toLowerCase()));
+	return filenames.some((filename) => presentEntryNames.has(filename.toLowerCase()) && hasCompilerInConfigFile(path$1.join(directory, filename)));
+};
+const hasCompilerInPackageJsonConfig = (directory, packageJson) => {
+	if (!isPlainObject(packageJson.babel)) return false;
+	const packageJsonPath = path$1.join(directory, "package.json");
+	return analyzeConfigSourceFileExport(typescriptBinding.parseJsonText(packageJsonPath, JSON.stringify(packageJson.babel)), packageJsonPath, "default", false, 0, /* @__PURE__ */ new Set());
+};
+const hasReactCompilerConfiguration = (directory, packageJson) => hasCompilerInPackageJsonConfig(directory, packageJson) || hasCompilerInConfigFiles(directory, REACT_COMPILER_CONFIG_FILENAMES);
+const hasReactCompilerConfigurationInAncestors = (directory) => {
+	if (isProjectBoundary(directory)) return false;
+	let ancestorDirectory = path$1.dirname(directory);
+	while (ancestorDirectory !== path$1.dirname(ancestorDirectory)) {
+		const ancestorPackagePath = path$1.join(ancestorDirectory, "package.json");
+		const ancestorPackageJson = isFile(ancestorPackagePath) ? readPackageJson(ancestorPackagePath) : {};
+		if (hasCompilerInPackageJsonConfig(ancestorDirectory, ancestorPackageJson) || hasCompilerInConfigFiles(ancestorDirectory, BABEL_CONFIG_FILENAMES)) return true;
+		if (isProjectBoundary(ancestorDirectory)) return false;
+		ancestorDirectory = path$1.dirname(ancestorDirectory);
+	}
+	return false;
+};
+//#endregion
+//#region ../core/src/project-info/detect-react-compiler.ts
+const REACT_COMPILER_RUNTIME_PACKAGES = new Set(["react-compiler-runtime"]);
+const hasCompilerPackage = (packageJson, compilerPackages) => {
+	const allDependencies = {
+		...packageJson.peerDependencies,
+		...packageJson.dependencies,
+		...packageJson.devDependencies
+	};
+	return Object.keys(allDependencies).some((packageName) => compilerPackages.has(packageName));
+};
+const hasCompilerPackageInAncestors = (directory, compilerPackages) => {
+	if (isProjectBoundary(directory)) return false;
+	let ancestorDirectory = path$1.dirname(directory);
+	while (ancestorDirectory !== path$1.dirname(ancestorDirectory)) {
+		const ancestorPackagePath = path$1.join(ancestorDirectory, "package.json");
+		if (isFile(ancestorPackagePath)) {
+			if (hasCompilerPackage(readPackageJson(ancestorPackagePath), compilerPackages)) return true;
+		}
+		if (isProjectBoundary(ancestorDirectory)) return false;
+		ancestorDirectory = path$1.dirname(ancestorDirectory);
+	}
+	return false;
+};
+const detectReactCompiler = (directory, packageJson) => hasCompilerPackage(packageJson, REACT_COMPILER_RUNTIME_PACKAGES) || hasCompilerPackageInAncestors(directory, REACT_COMPILER_RUNTIME_PACKAGES) || hasReactCompilerConfiguration(directory, packageJson) || hasReactCompilerConfigurationInAncestors(directory);
+//#endregion
+//#region ../core/src/project-info/react-compiler-detection-worker-protocol.ts
+const isReactCompilerDetectionRequest = (value) => typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" && "directory" in value && typeof value.directory === "string";
+//#endregion
+//#region ../core/src/start-react-compiler-detection-worker.ts
+const detectForDirectory = (directory) => {
+	const packageJsonPath = path$1.join(directory, "package.json");
+	if (!isFile(packageJsonPath)) return null;
+	try {
+		return detectReactCompiler(directory, readPackageJson(packageJsonPath));
+	} catch {
+		return null;
+	}
+};
+const startReactCompilerDetectionWorker = () => {
+	if (parentPort === null) throw new Error("React Compiler detection worker must run as a worker thread.");
+	const port = parentPort;
+	port.on("message", (message) => {
+		if (!isReactCompilerDetectionRequest(message)) return;
+		const reply = {
+			id: message.id,
+			hasReactCompiler: detectForDirectory(message.directory)
+		};
+		port.postMessage(reply);
+	});
+};
+//#endregion
+//#region src/react-compiler-detection-worker.ts
+startReactCompilerDetectionWorker();
+//#endregion
+export {};
+
+//# sourceMappingURL=react-compiler-detection-worker.js.map
+//# debugId=538f795a-ce66-5950-bf7f-048038bff5f8

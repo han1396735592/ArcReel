@@ -1,0 +1,25 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e6e5cde8-a67e-5946-9e5a-a8e3ec114544")}catch(e){}}();
+import { b as isNonInteractiveEnvironment } from "./record-metric-AbxY4m3i.js";
+//#region src/cli/utils/resolve-tui-environment.ts
+const resolveTuiEnvironment = (outputIsTty = process.stdout.isTTY === true) => ({
+	isNonInteractiveEnvironment: isNonInteractiveEnvironment(),
+	nodeMajorVersion: Number(process.versions.node.split(".")[0]),
+	outputIsTty,
+	stdinIsTty: process.stdin.isTTY === true,
+	supportsRawMode: typeof process.stdin.setRawMode === "function",
+	terminalName: process.env.TERM
+});
+//#endregion
+//#region src/cli/utils/should-use-tui.ts
+const isTuiEnvironmentSupported = (input) => !input.isNonInteractiveEnvironment && input.stdinIsTty && input.outputIsTty && input.supportsRawMode && input.nodeMajorVersion >= 22 && input.terminalName !== "dumb";
+const shouldUseTui = (input) => {
+	if (!isTuiEnvironmentSupported(input)) return false;
+	const flags = input.flags;
+	return !(flags.score === true || flags.json === true || flags.jsonCompact === true || flags.jsonOut !== void 0 || flags.staged === true || flags.changedFilesFrom !== void 0);
+};
+//#endregion
+export { shouldUseTui as n, resolveTuiEnvironment as r, isTuiEnvironmentSupported as t };
+
+//# sourceMappingURL=should-use-tui-ZZii9Kea.js.map
+//# debugId=e6e5cde8-a67e-5946-9e5a-a8e3ec114544
