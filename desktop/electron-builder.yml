@@ -1,0 +1,42 @@
+appId: com.arcreel.desktop
+productName: ArcReel
+copyright: Copyright © ArcReel contributors
+
+directories:
+  output: dist
+
+files:
+  - main.js
+  - preload.js
+  - package.json
+
+asar: true
+compression: normal
+
+# 后端以源码 + 预装依赖 + 随包 Python 运行时的方式分发（不冻结二进制）
+extraResources:
+  - from: build/app
+    to: app
+  - from: build/python
+    to: python
+
+win:
+  target:
+    - portable
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+mac:
+  target:
+    - zip
+  category: public.app-category.video
+  # 无开发者证书时的 ad-hoc 签名：Apple Silicon 要求至少有一个有效签名
+  identity: "-"
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+linux:
+  target:
+    - tar.gz
+  category: AudioVideo
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+publish: null

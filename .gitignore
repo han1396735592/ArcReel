@@ -46,6 +46,7 @@ CLAUDE.local.md
 
 # Frontend build artifacts
 frontend/node_modules/
+desktop/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/test-results/

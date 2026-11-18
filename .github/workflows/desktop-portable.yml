@@ -1,0 +1,161 @@
+name: Desktop Portable
+
+# 便携版桌面应用：v* tag 推送或手动触发时，按平台构建 Electron 应用。
+# 后端不冻结二进制，随包分发源码 + 预装依赖 + python-build-standalone 运行时。
+# 产物为免安装归档（Windows portable exe / macOS zip / Linux tar.gz）。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-portable-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            artifact: windows-x64
+          - name: macos-arm64
+            os: macos-14
+            artifact: macos-arm64
+          - name: macos-x64
+            os: macos-13
+            artifact: macos-x64
+          - name: linux-x64
+            os: ubuntu-22.04
+            artifact: linux-x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+
+      - name: Build frontend
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend build
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Export backend requirements
+        run: |
+          mkdir -p desktop/build
+          uv export --frozen --no-dev --no-hashes --no-emit-workspace \
+            --format requirements-txt -o desktop/build/requirements.txt
+
+      - name: Fetch bundled Python runtime
+        run: python desktop/scripts/fetch_python_runtime.py
+
+      - name: Resolve bundled interpreter
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "PORTABLE_PY=desktop/build/python/python.exe" >> "$GITHUB_ENV"
+          else
+            echo "PORTABLE_PY=desktop/build/python/bin/python3" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install backend dependencies into bundled runtime
+        run: uv pip install --python "$PORTABLE_PY" -r desktop/build/requirements.txt
+
+      - name: Stage portable backend
+        run: "$PORTABLE_PY" desktop/scripts/stage_app.py
+
+      - name: Smoke test backend
+        run: "$PORTABLE_PY" desktop/scripts/smoke_backend.py
+
+      - name: Install desktop dependencies
+        run: pnpm --dir desktop install --frozen-lockfile
+
+      - name: Resolve version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=$(node -p "require('./desktop/package.json').version")" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build portable app
+        run: >
+          pnpm --dir desktop exec electron-builder
+          --config electron-builder.yml
+          -c.extraMetadata.version="$APP_VERSION"
+          --publish never
+
+      - name: Assert artifacts
+        run: |
+          ls -lh desktop/dist
+          test -n "$(find desktop/dist -maxdepth 1 -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.tar.gz' \) -print -quit)"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arcreel-portable-${{ matrix.artifact }}
+          path: desktop/dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download build artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir artifacts
+
+      # Release 通常由 release-please 创建，与本 job 存在竞态：先等它出现，再补资产。
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 10
+          done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "$TAG" --notes "Desktop portable build for $TAG"
+          fi
+          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.tar.gz' \) -print0 |
+            while IFS= read -r -d '' file; do
+              gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+            done

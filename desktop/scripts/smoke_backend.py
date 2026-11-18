@@ -127,8 +127,8 @@ def main() -> int:
 
             checks = {
                 "/health": b'"status":"ok"',
-                "/": b'<div id="root"',
-                "/app/": b'<div id="root"',
+                "/": b'id="app-root"',
+                "/app/": b'id="app-root"',
             }
             for path, marker in checks.items():
                 status, body = request(port, path)
