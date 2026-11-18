@@ -1,0 +1,17 @@
+{
+  "name": "arcreel-desktop",
+  "productName": "ArcReel",
+  "version": "0.34.0",
+  "private": true,
+  "description": "ArcReel desktop shell",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --config electron-builder.yml",
+    "build:dir": "electron-builder --config electron-builder.yml --dir"
+  },
+  "devDependencies": {
+    "electron": "45.3.4",
+    "electron-builder": "26.18.0"
+  }
+}
